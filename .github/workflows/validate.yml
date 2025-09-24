@@ -1,0 +1,26 @@
+---
+name: Validate
+
+on:  # yamllint disable-line rule:truthy
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 4 * * 1-5"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  validate-hacs:
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: "HACS validation"
+        uses: "hacs/action@main"
+        with:
+          category: "integration"
+          ignore: "images"
+  validate-hassfest:
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: "actions/checkout@v5"
+      - uses: "home-assistant/actions/hassfest@master"
