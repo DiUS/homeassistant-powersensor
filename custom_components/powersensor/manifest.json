@@ -15,5 +15,8 @@
     "powersensor-local==2.0.0"
   ],
   "single_config_entry": true,
-  "version": "0.0.0"
+  "version": "0.0.0",
+    "zeroconf": [
+    "_powersensor._tcp.local."
+  ]
 }
