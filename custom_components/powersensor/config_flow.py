@@ -60,6 +60,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._discovered_port = None
         self._discovered_name = None
         self._discovered_host = None
+        self._mac = None
         self.discovery_info = {}
 
     async def async_step_user(self, user_input=None) -> ConfigFlowResult:
@@ -102,6 +103,9 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         host = discovery_info.host
         port = discovery_info.port or DEFAULT_PORT
         name = _extract_device_name(discovery_info) or ""
+        properties = discovery_info.properties or {}
+        if "id" in properties:
+            self._mac = properties["id"].strip()
 
         # Set unique_id to prevent duplicate entries
         await self.async_set_unique_id(f"{host}:{port}")
@@ -133,6 +137,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_NAME: self._discovered_name,
                 CONF_HOST: self._discovered_host,
                 CONF_PORT: self._discovered_port,
+                "mac" : self._mac
             }
             result = self.async_create_entry(
                 title=self._discovered_name +" @ " + self._discovered_host,
@@ -144,5 +149,6 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "name": self._discovered_name,
                 "host": self._discovered_host,
                 "port": self._discovered_port,
+                "mac" : None
             },
         )
