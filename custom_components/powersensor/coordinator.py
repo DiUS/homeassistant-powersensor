@@ -25,6 +25,8 @@ class PlugMeasurements(Enum):
 
 class SensorMeasurements(Enum):
     Battery  =1
+    WATTS = 2
+    SUMMATION_ENERGY = 3
 
 
 
@@ -35,22 +37,21 @@ class PowersensorDataUpdateCoordinator(DataUpdateCoordinator):
         self,
         hass: HomeAssistant,
         entry: ConfigEntry,
-        scan_interval = None
     ) -> None:
         """Initialize."""
-        if scan_interval is None:
-            scan_interval = DEFAULT_SCAN_INTERVAL
 
         super().__init__(
             hass,
             _LOGGER,
-            name=DOMAIN,
-            update_interval=timedelta(seconds=scan_interval),
+            name=DOMAIN
         )
-        self._message_cache = {}
         self.sensor_data = dict()
-        self._mac = entry.data["mac"]
-        self._api = PlugApi(mac=entry.data["mac"], ip=entry.data["host"], port=entry.data["port"])
+
+        self._plug_apis =dict()
+        self._ips = dict()
+        for mac, network_info in entry.data.items():
+            self._plug_apis[mac] = PlugApi(mac=network_info.mac, ip=network_info.host, port=network_info.port)
+            self._ips[mac] = network_info.host
         self.async_add_sensor_entities = None
         known_evs = [
             'exception',
@@ -64,67 +65,65 @@ class PowersensorDataUpdateCoordinator(DataUpdateCoordinator):
             'summation_volume',
             'uncalibrated_instant_reading',
         ]
-        for ev in known_evs:
-            self._api.subscribe(ev, self.handle_message)
+        self.plug_data = dict()
+        for mac, api in self._plug_apis.items():
+            for ev in known_evs:
+                api.subscribe(ev, self.handle_message)
+            api.connect()
 
-        self._api.connect()
+            self.plug_data[mac] = {
+                PlugMeasurements.WATTS : 0.0,
+                PlugMeasurements.VOLTAGE : 0.0,
+                PlugMeasurements.APPARENT_CURRENT :  0.0,
+                PlugMeasurements.ACTIVE_CURRENT :  0.0,
+                PlugMeasurements.REACTIVE_CURRENT :  0.0,
+                PlugMeasurements.SUMMATION_ENERGY: 0.0,
+            }
 
-        self.plug_data = {
-            PlugMeasurements.WATTS : 0.0,
-            PlugMeasurements.VOLTAGE : 0.0,
-            PlugMeasurements.APPARENT_CURRENT :  0.0,
-            PlugMeasurements.ACTIVE_CURRENT :  0.0,
-            PlugMeasurements.REACTIVE_CURRENT :  0.0,
-            PlugMeasurements.SUMMATION_ENERGY: 0.0,
-        }
-
-    async def start(self):
-        """Start up plug api"""
-        try:
-            await asyncio.to_thread(self._api.connect)
-        except Exception as err:
-            _LOGGER.error("Error starting Plug listener!: %s", err)
 
     async def stop(self):
         """stop listening to plug"""
-        await self._api.disconnect()
+        for mac, api in self._plug_apis.items():
+            _LOGGER.info(
+                f"Removing Plug Api with ip={self._ips[mac]} and mac={mac} from {DOMAIN}.")
+            await api.disconnect()
 
     async def _async_update_data(self):
         return self.plug_data
 
     async def handle_message(self, event, message):
-        if event == 'average_power':
-            if message['mac'] == self._mac:
-                self.plug_data[PlugMeasurements.WATTS] = message['watts']
-                # _LOGGER.error(
-                #     f"Plug watts received over UDP, updating... to {message['watts']}, {message['mac'] == self._mac}")
-        elif event == 'average_power_components':
-            if message['mac'] == self._mac:
-                self.plug_data[PlugMeasurements.VOLTAGE] = message['volts']
-                self.plug_data[PlugMeasurements.APPARENT_CURRENT] = message['apparent_current']
-                self.plug_data[PlugMeasurements.ACTIVE_CURRENT] = message['active_current']
-                self.plug_data[PlugMeasurements.REACTIVE_CURRENT] = message['reactive_current']
-                # _LOGGER.error(
-                #     f"Plug VOLTS received over UDP, updating... to {message}")
+        mac = message['mac']
+        if mac in self.plug_data.keys():
+            # handle plugs
+            if event == 'average_power':
+                self.plug_data[mac][PlugMeasurements.WATTS] = message['watts']
+            elif event == 'average_power_components':
+                self.plug_data[mac][PlugMeasurements.VOLTAGE] = message['volts']
+                self.plug_data[mac][PlugMeasurements.APPARENT_CURRENT] = message['apparent_current']
+                self.plug_data[mac][PlugMeasurements.ACTIVE_CURRENT] = message['active_current']
+                self.plug_data[mac][PlugMeasurements.REACTIVE_CURRENT] = message['reactive_current']
 
-        elif event == "summation_energy":
-            if message['mac'] == self._mac:
-                # convert joules to kWh
-                self.plug_data[PlugMeasurements.SUMMATION_ENERGY] = message['summation_joules']/3600000.0
-                # _LOGGER.error(
-                #     f"Plug Energy received over UDP, updating... to {message['summation_joules']}, {message['mac'] == self._mac}")
-        elif event in ['radio_signal_quality', 'battery_level', 'now_relaying_for']:
-            await self.handle_device_discovery(message)
-            if event == 'radio_signal_quality':
-                pass
-            elif event == 'battery_level':
-                self.sensor_data[message['mac']][SensorMeasurements.Battery] = message['volts']
-            elif event == 'now_relaying_for':
-                pass
-            _LOGGER.warning(f"{event}: {message}")
-
+            elif event == "summation_energy":
+                self.plug_data[mac][PlugMeasurements.SUMMATION_ENERGY] = message['summation_joules']/3600000.0
+            else:
+                _LOGGER.warning(f"{event}: {message}")
         else:
-            _LOGGER.warning(f"{event}: {message}")
+            # handle sensors
+            await self.handle_device_discovery(message)
+            if event == 'average_power':
+                self.sensor_data[mac][SensorMeasurements.WATTS] = message['watts']
+            elif event == "summation_energy":
+                self.sensor_data[message['mac']][SensorMeasurements.SUMMATION_ENERGY] = message['summation_joules']/3600000.0
+            elif event in ['radio_signal_quality', 'battery_level', 'now_relaying_for']:
+                await self.handle_device_discovery(message)
+                if event == 'radio_signal_quality':
+                    _LOGGER.warning(f"{event}: {message}")
+                elif event == 'battery_level':
+                    self.sensor_data[message['mac']][SensorMeasurements.Battery] = message['volts']
+                elif event == 'now_relaying_for':
+                    _LOGGER.warning(f"{event}: {message}")
+            else:
+                _LOGGER.warning(f"{event}: {message}")
 
         self.async_update_listeners()
 
@@ -136,7 +135,9 @@ class PowersensorDataUpdateCoordinator(DataUpdateCoordinator):
 
             from .PowersensorSensorEntity import PowersensorSensorEntity
             new_sensor_entities = [
-                PowersensorSensorEntity(self.hass, self, message['mac'], SensorMeasurements.Battery)
+                PowersensorSensorEntity(self.hass, self, message['mac'], SensorMeasurements.Battery),
+                PowersensorSensorEntity(self.hass, self, message['mac'], SensorMeasurements.WATTS),
+                PowersensorSensorEntity(self.hass, self, message['mac'], SensorMeasurements.SUMMATION_ENERGY)
             ]
             self.async_add_sensor_entities(new_sensor_entities)
             _LOGGER.error(f"New sensor found, with Mac Address: {message['mac']}")

@@ -4,7 +4,6 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfPower, UnitOfElectricPotential, UnitOfElectricCurrent, UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -16,12 +15,12 @@ from .const import DOMAIN
 
 class PowersensorPlugEntity(SensorEntity):
     """Powersensor Plug Class--designed to handle all measurements of the plug--perhaps less expressive"""
-    def __init__(self, hass: HomeAssistant, coordinator: PowersensorDataUpdateCoordinator, entry: ConfigEntry,
+    def __init__(self, hass: HomeAssistant, coordinator: PowersensorDataUpdateCoordinator, mac_address: str,
                  measurement_type: PlugMeasurements):
         """Initialize the sensor."""
         self.coordinator = coordinator
         self._hass = hass
-        self._mac = entry.data['mac']
+        self._mac = mac_address
         self._model = f"PowersensorPlug"
         self._config  = {
             PlugMeasurements.WATTS : {
@@ -59,13 +58,13 @@ class PowersensorPlugEntity(SensorEntity):
                 "device_class": SensorDeviceClass.ENERGY,
                 "unit": UnitOfEnergy.KILO_WATT_HOUR,
                 "precision": 2,
-                "state_class" : SensorStateClass.TOTAL_INCREASING
+                "state_class" : SensorStateClass.TOTAL
             },
         }
         self.measurement_type = measurement_type
         config = self._config[measurement_type]
         self._attr_name = f"🔌 MAC address: ({self._mac}) {config['name']}"
-        self._attr_unique_id = f"{entry.entry_id}_{measurement_type}"
+        self._attr_unique_id = f"{DOMAIN}_{self._mac}_{measurement_type}"
         self._attr_device_class = config["device_class"]
         self._attr_native_unit_of_measurement = config["unit"]
         self._attr_device_info = self.device_info
@@ -85,12 +84,12 @@ class PowersensorPlugEntity(SensorEntity):
 
     @property
     def native_value(self) -> StateType | date | datetime | Decimal:
-        return self.coordinator.plug_data.get(self.measurement_type)
+        return self.coordinator.plug_data.get(self._mac).get(self.measurement_type)
 
     @property
     def available(self) -> bool:
         """Does data exist for this sensor type"""
-        return self.coordinator.plug_data.get(self.measurement_type, None) is not None
+        return self.coordinator.plug_data.get(self._mac).get(self.measurement_type, None) is not None
 
     async def async_added_to_hass(self) -> None:
         """Listen for updates from coordinator"""

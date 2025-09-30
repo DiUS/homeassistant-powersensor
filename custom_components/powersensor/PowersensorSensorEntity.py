@@ -30,6 +30,19 @@ class PowersensorSensorEntity(SensorEntity):
                 "unit": UnitOfElectricPotential.VOLT,
                 "precision": 2
             },
+            SensorMeasurements.WATTS: {
+                "name" : "Power",
+                "device_class" : SensorDeviceClass.POWER,
+                "unit" : UnitOfPower.WATT,
+                "precision" : 1
+            },
+            SensorMeasurements.SUMMATION_ENERGY: {
+                "name": "Total Energy",
+                "device_class": SensorDeviceClass.ENERGY,
+                "unit": UnitOfEnergy.KILO_WATT_HOUR,
+                "precision": 2,
+                "state_class" : SensorStateClass.TOTAL
+            },
         }
         self.measurement_type = measurement_type
         config = self._config[measurement_type]

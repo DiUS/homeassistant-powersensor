@@ -2,13 +2,24 @@
 import asyncio
 import logging
 from typing import Any
-
+import asyncio
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers.service_info import zeroconf
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_NAME
 from homeassistant.helpers import config_validation as cv
+
+from dataclasses import dataclass
+
+@dataclass
+class PlugNetworkInfo:
+    host: str
+    port: int
+    name: str
+    mac: str | None
+
+
 
 from .const import DEFAULT_PORT, DOMAIN
 
@@ -57,44 +68,40 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def __init__(self):
         """Initialize the config flow."""
-        self._discovered_port = None
-        self._discovered_name = None
-        self._discovered_host = None
-        self._mac = None
-        self.discovery_info = {}
+        self._discovered_plugs = dict()
 
-    async def async_step_user(self, user_input=None) -> ConfigFlowResult:
-        """Handle manual user setup."""
-        errors = {}
-
-        if user_input is not None:
-            # Validate the host/connection here if needed
-            try:
-                # Set unique ID based on host to prevent duplicates
-                await self.async_set_unique_id(user_input[CONF_HOST])
-                self._abort_if_unique_id_configured()
-
-                return self.async_create_entry(
-                    title=user_input[CONF_NAME],
-                    data=user_input
-                )
-            except Exception as ex:
-                _LOGGER.error("Error validating configuration: %s", ex)
-                errors["base"] = "cannot_connect"
-
-        data_schema = vol.Schema(
-            {
-                vol.Required(CONF_NAME): cv.string,
-                vol.Required(CONF_HOST): cv.string,
-                vol.Optional(CONF_PORT, default=80): cv.port,
-            }
-        )
-
-        return self.async_show_form(
-            step_id="user",
-            data_schema=data_schema,
-            errors=errors
-        )
+    # async def async_step_user(self, user_input=None) -> ConfigFlowResult:
+    #     """Handle manual user setup."""
+    #     errors = {}
+    #
+    #     if user_input is not None:
+    #         # Validate the host/connection here if needed
+    #         try:
+    #             # Set unique ID based on host to prevent duplicates
+    #             await self.async_set_unique_id(user_input[CONF_HOST])
+    #             self._abort_if_unique_id_configured()
+    #
+    #             return self.async_create_entry(
+    #                 title=user_input[CONF_NAME],
+    #                 data=user_input
+    #             )
+    #         except Exception as ex:
+    #             _LOGGER.error("Error validating configuration: %s", ex)
+    #             errors["base"] = "cannot_connect"
+    #
+    #     data_schema = vol.Schema(
+    #         {
+    #             vol.Required(CONF_NAME): cv.string,
+    #             vol.Required(CONF_HOST): cv.string,
+    #             vol.Optional(CONF_PORT, default=80): cv.port,
+    #         }
+    #     )
+    #
+    #     return self.async_show_form(
+    #         step_id="user",
+    #         data_schema=data_schema,
+    #         errors=errors
+    #     )
 
     async def async_step_zeroconf(
         self, discovery_info: zeroconf.ZeroconfServiceInfo
@@ -104,51 +111,53 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         port = discovery_info.port or DEFAULT_PORT
         name = _extract_device_name(discovery_info) or ""
         properties = discovery_info.properties or {}
+        mac = None
         if "id" in properties:
-            self._mac = properties["id"].strip()
+            mac = properties["id"].strip()
 
-        # Set unique_id to prevent duplicate entries
-        await self.async_set_unique_id(f"{host}:{port}")
-        self._abort_if_unique_id_configured(
-            updates={CONF_HOST: host, CONF_PORT: port}
-        )
+        plug_data = PlugNetworkInfo(host, port, name, mac)
+        # _LOGGER.error(f"Found plug info: {plug_data}")
 
+        if DOMAIN not in self.hass.data:
+            self.hass.data[DOMAIN] = {}
+
+        discovered_plugs_key = "discovered_plugs"
+        if discovered_plugs_key not in self.hass.data[DOMAIN]:
+            self.hass.data[DOMAIN][discovered_plugs_key] = {}
+
+        if mac in self.hass.data[DOMAIN][discovered_plugs_key].keys():
+            return self.async_abort(reason="already_configured")
+
+        self.hass.data[DOMAIN][discovered_plugs_key][mac] = plug_data
+
+
+
+        # register a unique id for the single power sensor entry
+        await self.async_set_unique_id(DOMAIN)
+
+        # abort now if configuration is complete
+        self._abort_if_unique_id_configured()
+        # abort now if configuration is on going in another thread (i.e. this thread isn't the first)
+        if self._async_current_entries() or self._async_in_progress():
+            return self.async_abort(reason="already_configured")
+
+        display_name = f"⚡ Powersensor 🔌\n"
         self.context.update({
             "title_placeholders": {
-                "name": name,
-                "host": host,
+                "name": display_name
             }
         })
-        # Store discovered info
-        self._discovered_host = host
-        self._discovered_name = name
-        self._discovered_port = port
-        self.discovery_info = {CONF_HOST: host, CONF_PORT: port}
-
         return await self.async_step_discovery_confirm()
 
     async def async_step_discovery_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+
         """Confirm discovery."""
         if user_input is not None:
-            # Create the entry with discovered data
-            data = {
-                CONF_NAME: self._discovered_name,
-                CONF_HOST: self._discovered_host,
-                CONF_PORT: self._discovered_port,
-                "mac" : self._mac
-            }
             result = self.async_create_entry(
-                title=self._discovered_name +" @ " + self._discovered_host,
-                data=data
+                title="Powersensor",
+                data=self.hass.data[DOMAIN]["discovered_plugs"]
             )
             return result
-        return self.async_show_form(step_id="discovery_confirm",
-            description_placeholders={
-                "name": self._discovered_name,
-                "host": self._discovered_host,
-                "port": self._discovered_port,
-                "mac" : None
-            },
-        )
+        return self.async_show_form(step_id="discovery_confirm")

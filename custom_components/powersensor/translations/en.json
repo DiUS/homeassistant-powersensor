@@ -9,8 +9,8 @@
         }
       },
       "discovery_confirm": {
-        "description": "Do you want to add the discovered device to Home Assistant?",
-        "title": "Discovered device"
+        "description": "Do you want to add Powersensor to Home Assistant?",
+        "title": "Powersensor plugs discovered"
       }
     },
     "error": {
