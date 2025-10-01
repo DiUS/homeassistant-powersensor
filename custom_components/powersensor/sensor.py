@@ -19,6 +19,8 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Powersensor sensors."""
+    _LOGGER.error("Fairy pants")
+
     plug_update_coordinator  = hass.data[DOMAIN][entry.entry_id]
     plug_sensors = []
     for plug in plug_update_coordinator.plug_data:

@@ -101,6 +101,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, discovery_info: zeroconf.ZeroconfServiceInfo
     ) -> ConfigFlowResult:
         """Handle zeroconf discovery."""
+        _LOGGER.error("Gotta get called")
         host = discovery_info.host
         port = discovery_info.port or DEFAULT_PORT
         name = _extract_device_name(discovery_info) or ""
