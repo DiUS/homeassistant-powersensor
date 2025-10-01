@@ -8,8 +8,7 @@ from enum import Enum
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from powersensor_local import PlugApi
-
+from powersensor_local import PlugApi, VirtualHousehold
 
 from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 
@@ -84,6 +83,7 @@ class PowersensorDataUpdateCoordinator(DataUpdateCoordinator):
                 PlugMeasurements.SUMMATION_ENERGY: 0.0,
             }
 
+        self._vhh = VirtualHousehold(True) # FIXME needs to track whether we have seen solar or not
 
     async def stop(self):
         """stop listening to plug"""
@@ -104,6 +104,12 @@ class PowersensorDataUpdateCoordinator(DataUpdateCoordinator):
         return self.plug_data
 
     async def handle_message(self, event, message):
+        # Drive household calculation
+        if event == "average_power":
+            await self._vhh.process_average_power_event(message)
+        elif event == "summation_energy":
+            await self._vhh.process_summation_event(message)
+
         mac = message['mac']
         if mac in self.plug_data.keys():
             # handle plugs
@@ -141,6 +147,7 @@ class PowersensorDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def handle_device_discovery(self, message):
         if message['mac'] not in self.sensor_data.keys():
+            # TODO this should really check the device_type in the message
             self.sensor_data[message['mac']] = dict({
                 SensorMeasurements.Battery : 0.0
             })
