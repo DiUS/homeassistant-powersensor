@@ -12,12 +12,6 @@ from homeassistant.helpers import config_validation as cv
 
 from dataclasses import dataclass
 
-@dataclass
-class PlugNetworkInfo:
-    host: str
-    port: int
-    name: str
-    mac: str | None
 
 
 
@@ -115,7 +109,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if "id" in properties:
             mac = properties["id"].strip()
 
-        plug_data = PlugNetworkInfo(host, port, name, mac)
+        plug_data = {'host' : host,'port' :  port,  'name' : name,'mac': mac}
         # _LOGGER.error(f"Found plug info: {plug_data}")
 
         if DOMAIN not in self.hass.data:
@@ -126,6 +120,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.hass.data[DOMAIN][discovered_plugs_key] = {}
 
         if mac in self.hass.data[DOMAIN][discovered_plugs_key].keys():
+            _LOGGER.warning("Aborting - found existing mac in data!")
             return self.async_abort(reason="already_configured")
 
         self.hass.data[DOMAIN][discovered_plugs_key][mac] = plug_data
@@ -135,10 +130,9 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # register a unique id for the single power sensor entry
         await self.async_set_unique_id(DOMAIN)
 
-        # abort now if configuration is complete
-        self._abort_if_unique_id_configured()
         # abort now if configuration is on going in another thread (i.e. this thread isn't the first)
         if self._async_current_entries() or self._async_in_progress():
+            _LOGGER.warning("Aborting - found existing entry!")
             return self.async_abort(reason="already_configured")
 
         display_name = f"⚡ Powersensor 🔌\n"
@@ -155,9 +149,8 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         """Confirm discovery."""
         if user_input is not None:
-            result = self.async_create_entry(
+            return self.async_create_entry(
                 title="Powersensor",
                 data=self.hass.data[DOMAIN]["discovered_plugs"]
             )
-            return result
         return self.async_show_form(step_id="discovery_confirm")

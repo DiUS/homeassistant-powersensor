@@ -49,9 +49,11 @@ class PowersensorDataUpdateCoordinator(DataUpdateCoordinator):
 
         self._plug_apis =dict()
         self._ips = dict()
+
         for mac, network_info in entry.data.items():
-            self._plug_apis[mac] = PlugApi(mac=network_info.mac, ip=network_info.host, port=network_info.port)
-            self._ips[mac] = network_info.host
+            # raise Exception
+            self._plug_apis[mac] = PlugApi(mac=network_info['mac'], ip=network_info['host'], port=network_info['port'])
+            self._ips[mac] = network_info['host']
         self.async_add_sensor_entities = None
         known_evs = [
             'exception',
@@ -84,9 +86,13 @@ class PowersensorDataUpdateCoordinator(DataUpdateCoordinator):
     async def stop(self):
         """stop listening to plug"""
         for mac, api in self._plug_apis.items():
-            _LOGGER.info(
+            _LOGGER.warning(
                 f"Removing Plug Api with ip={self._ips[mac]} and mac={mac} from {DOMAIN}.")
             await api.disconnect()
+
+        #explicitly delete
+        for mac in self._plug_apis.keys():
+            self._plug_apis[mac] = None
 
     async def _async_update_data(self):
         return self.plug_data
