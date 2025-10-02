@@ -1,19 +1,11 @@
 """Config flow for the integration."""
-import asyncio
 import logging
 from typing import Any
-import asyncio
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers.service_info import zeroconf
-from homeassistant.const import CONF_HOST, CONF_PORT, CONF_NAME
-from homeassistant.helpers import config_validation as cv
-
-from dataclasses import dataclass
-
-
-
+from homeassistant.const import CONF_HOST, CONF_PORT
 
 from .const import DEFAULT_PORT, DOMAIN
 
@@ -62,7 +54,6 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def __init__(self):
         """Initialize the config flow."""
-        self._discovered_plugs = dict()
 
     # async def async_step_user(self, user_input=None) -> ConfigFlowResult:
     #     """Handle manual user setup."""
@@ -101,7 +92,6 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, discovery_info: zeroconf.ZeroconfServiceInfo
     ) -> ConfigFlowResult:
         """Handle zeroconf discovery."""
-        _LOGGER.error("Gotta get called")
         host = discovery_info.host
         port = discovery_info.port or DEFAULT_PORT
         name = _extract_device_name(discovery_info) or ""
@@ -111,7 +101,6 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             mac = properties["id"].strip()
 
         plug_data = {'host' : host,'port' :  port,  'name' : name,'mac': mac}
-        # _LOGGER.error(f"Found plug info: {plug_data}")
 
         if DOMAIN not in self.hass.data:
             self.hass.data[DOMAIN] = {}
@@ -121,10 +110,9 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.hass.data[DOMAIN][discovered_plugs_key] = {}
 
         if mac in self.hass.data[DOMAIN][discovered_plugs_key].keys():
-            _LOGGER.warning("Aborting - found existing mac in data!")
-            return self.async_abort(reason="already_configured")
-
-        self.hass.data[DOMAIN][discovered_plugs_key][mac] = plug_data
+            _LOGGER.warning("Mac found existing in data!")
+        else:
+            self.hass.data[DOMAIN][discovered_plugs_key][mac] = plug_data
 
 
 
@@ -150,6 +138,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         """Confirm discovery."""
         if user_input is not None:
+            _LOGGER.error(self.hass.data[DOMAIN]["discovered_plugs"])
             return self.async_create_entry(
                 title="Powersensor",
                 data=self.hass.data[DOMAIN]["discovered_plugs"]
