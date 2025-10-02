@@ -5,12 +5,15 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .PlugMeasurements import PlugMeasurements
 from .PowersensorHouseholdEntity import HouseholdMeasurements, PowersensorHouseholdEntity
 from .PowersensorPlugEntity import PowersensorPlugEntity
+from .PowersensorSensorEntity import PowersensorSensorEntity
+from .SensorMeasurements import SensorMeasurements
 from .const import DOMAIN
-from .coordinator import PlugMeasurements
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -32,16 +35,15 @@ async def async_setup_entry(
     async_add_entities(plug_sensors, True)
 
     # Register household entities
-    vhh = plug_update_coordinator._vhh # TODO tidy up
-    household_entities = []
-    for measurement_type in HouseholdMeasurements:
-        # TODO: only include to_grid/solar if have solar?
-        # Should we dynamically register the household only in response to
-        # getting role:house-net and role:solar messages, maybe?
-        household_entities.append(PowersensorHouseholdEntity(vhh, measurement_type))
-    async_add_entities(household_entities)
+    # vhh = plug_update_coordinator._vhh # TODO tidy up
+    # household_entities = []
+    # for measurement_type in HouseholdMeasurements:
+    #     # TODO: only include to_grid/solar if have solar?
+    #     # Should we dynamically register the household only in response to
+    #     # getting role:house-net and role:solar messages, maybe?
+    #     household_entities.append(PowersensorHouseholdEntity(vhh, measurement_type))
+    # async_add_entities(household_entities)
 
-    plug_update_coordinator.async_add_sensor_entities  = async_add_entities
 
     async def handle_discovered_sensor(sensor_mac):
         new_sensors = [
