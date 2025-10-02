@@ -23,8 +23,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Powersensor sensors."""
+    vhh = entry.runtime_data["vhh"]
+    my_data = hass.data[DOMAIN][entry.entry_id]
     plug_sensors = []
-    for plug_mac in hass.data[DOMAIN][entry.entry_id]['dispatcher'].plugs.keys():
+    for plug_mac in my_data['dispatcher'].plugs.keys():
         plug_sensors.extend([PowersensorPlugEntity(hass, plug_mac, PlugMeasurements.WATTS),
                     PowersensorPlugEntity(hass, plug_mac, PlugMeasurements.VOLTAGE),
                     PowersensorPlugEntity(hass, plug_mac, PlugMeasurements.APPARENT_CURRENT),
@@ -33,18 +35,11 @@ async def async_setup_entry(
                     PowersensorPlugEntity(hass, plug_mac, PlugMeasurements.SUMMATION_ENERGY)])
 
     async_add_entities(plug_sensors, True)
-    # Register household entities
-    # vhh = plug_update_coordinator._vhh # TODO tidy up
-    # household_entities = []
-    # for measurement_type in HouseholdMeasurements:
-    #     # TODO: only include to_grid/solar if have solar?
-    #     # Should we dynamically register the household only in response to
-    #     # getting role:house-net and role:solar messages, maybe?
-    #     household_entities.append(PowersensorHouseholdEntity(vhh, measurement_type))
-    # async_add_entities(household_entities)
 
+    async def handle_discovered_sensor(sensor_mac, role):
+        if role == 'solar':
+            my_data["with_solar"] = True  # Remember for next time we start
 
-    async def handle_discovered_sensor(sensor_mac):
         new_sensors = [
             PowersensorSensorEntity(hass, sensor_mac, SensorMeasurements.Battery),
             PowersensorSensorEntity(hass, sensor_mac, SensorMeasurements.WATTS),
@@ -52,14 +47,20 @@ async def async_setup_entry(
         ]
         async_add_entities(new_sensors, True)
 
-    for mac in hass.data[DOMAIN][entry.entry_id]["dispatcher"].sensors:
-        await handle_discovered_sensor(mac)
+    for mac, role in my_data["dispatcher"].sensors.items():
+        await handle_discovered_sensor(mac, role)
 
     entry.async_on_unload(
         async_dispatcher_connect(
             hass, f"{DOMAIN}_create_sensor", handle_discovered_sensor
         )
     )
+
+    # Register the virtual household entities
+    household_entities = []
+    for measurement_type in HouseholdMeasurements:
+        household_entities.append(PowersensorHouseholdEntity(vhh, measurement_type))
+    async_add_entities(household_entities)
 
     async_dispatcher_send(hass, f"{DOMAIN}_setup_complete", True)
 

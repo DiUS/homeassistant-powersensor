@@ -3,16 +3,17 @@ import logging
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from powersensor_local import PlugApi
+from powersensor_local import PlugApi, VirtualHousehold
 
 from custom_components.powersensor.const import POWER_SENSOR_UPDATE_SIGNAL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 class PowersensorMessageDispatcher:
-    def __init__(self, hass: HomeAssistant):
+    def __init__(self, hass: HomeAssistant, vhh: VirtualHousehold):
         self._hass = hass
+        self._vhh = vhh
         self.plugs = dict()
-        self.sensors = set()
+        self.sensors = dict()
 
 
     def add_api(self, mac, network_info):
@@ -41,8 +42,17 @@ class PowersensorMessageDispatcher:
         mac = message['mac']
         if mac not in self.plugs.keys():
             if mac not in self.sensors:
-                self.sensors.add(mac)
-                async_dispatcher_send(self._hass, f"{DOMAIN}_create_sensor", mac )
+                role = None
+                if 'role' in message:
+                    role = message['role']
+                self.sensors[mac] = role
+                async_dispatcher_send(self._hass, f"{DOMAIN}_create_sensor", mac, role)
+
+        # Feed the household calculations
+        if event == 'average_power':
+            await self._vhh.process_average_power_event(message)
+        elif event == 'summation_energy':
+            await self._vhh.process_summation_event(message)
 
         async_dispatcher_send(self._hass, f"{POWER_SENSOR_UPDATE_SIGNAL}_{mac}_{event}", event, message)
 
