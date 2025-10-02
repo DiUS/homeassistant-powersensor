@@ -5,7 +5,7 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .PlugMeasurements import PlugMeasurements
@@ -33,7 +33,6 @@ async def async_setup_entry(
                     PowersensorPlugEntity(hass, plug_mac, PlugMeasurements.SUMMATION_ENERGY)])
 
     async_add_entities(plug_sensors, True)
-
     # Register household entities
     # vhh = plug_update_coordinator._vhh # TODO tidy up
     # household_entities = []
@@ -53,9 +52,14 @@ async def async_setup_entry(
         ]
         async_add_entities(new_sensors, True)
 
+    for mac in hass.data[DOMAIN][entry.entry_id]["dispatcher"].sensors:
+        await handle_discovered_sensor(mac)
+
     entry.async_on_unload(
         async_dispatcher_connect(
             hass, f"{DOMAIN}_create_sensor", handle_discovered_sensor
         )
     )
+
+    async_dispatcher_send(hass, f"{DOMAIN}_setup_complete", True)
 
