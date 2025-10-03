@@ -4,9 +4,11 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.loader import async_get_integration
 
 from powersensor_local import VirtualHousehold
 
+from .PowersensorDiscoveryService import PowersensorDiscoveryService
 from .PowersensorMessageDispatacher import PowersensorMessageDispatcher
 from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
@@ -20,6 +22,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {}
     my_data = hass.data[DOMAIN][entry.entry_id]
+
+    integration = await async_get_integration(hass, DOMAIN)
+    manifest  = integration.manifest
+
+    # Establish create the zeroconf discovery service
+    my_data["zeroconf"] = PowersensorDiscoveryService(hass, manifest["zeroconf"][0])
+    await my_data["zeroconf"].start()
 
     # Establish our virtual household
     vhh = VirtualHousehold(my_data["with_solar"] if "with_solar" in my_data else False)
@@ -43,6 +52,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 my_data = hass.data[DOMAIN][entry.entry_id]
                 if "dispatcher" in my_data.keys():
                     await my_data["dispatcher"].disconnect()
+                if "zeroconf" in my_data.keys():
+                    my_data["zeroconf"].stop()
 
     return unload_ok
 

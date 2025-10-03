@@ -15,11 +15,20 @@ class PowersensorMessageDispatcher:
         self.plugs = dict()
         self.sensors = dict()
         self.on_start_sensor_queue = dict()
-        self._unsubscribe_from_sensor_added_signal = (
+        self._unsubscribe_from_signals = [
             async_dispatcher_connect(self._hass,
                                      f"{DOMAIN}_sensor_added_to_homeassistant",
-                                     self._acknowledge_sensor_added_to_homeassistant)
-        )
+                                     self._acknowledge_sensor_added_to_homeassistant),
+            async_dispatcher_connect(self._hass,
+                                     f"{DOMAIN}_zeroconf_add_plug",
+                                     self._plug_added),
+            async_dispatcher_connect(self._hass,
+                                     f"{DOMAIN}_zeroconf_update_plug",
+                                     self._plug_updated),
+            async_dispatcher_connect(self._hass,
+                                     f"{DOMAIN}_zeroconf_remove_plug",
+                                     self._plug_remove)
+        ]
 
 
     def add_api(self, mac, network_info):
@@ -66,9 +75,22 @@ class PowersensorMessageDispatcher:
         for _ in range(len(self.plugs)):
             _, api = self.plugs.popitem()
             await api.disconnect()
-        if self._unsubscribe_from_sensor_added_signal is not None:
-            self._unsubscribe_from_sensor_added_signal()
+        for unsubscribe in self._unsubscribe_from_signals:
+            if unsubscribe is not None:
+                unsubscribe()
 
     @callback
     def _acknowledge_sensor_added_to_homeassistant(self,mac, role):
         self.sensors[mac] = role
+
+    @callback
+    def _plug_added(self, info):
+        _LOGGER.error(info)
+
+    @callback
+    def _plug_updated(self, info):
+        _LOGGER.error(info)
+
+    @callback
+    def _plug_remove(self,name, info):
+        _LOGGER.error(name,info)
