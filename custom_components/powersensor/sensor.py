@@ -36,8 +36,8 @@ async def async_setup_entry(
 
     async_add_entities(plug_sensors, True)
 
-    async def handle_discovered_sensor(sensor_mac, role):
-        if role == 'solar':
+    async def handle_discovered_sensor(sensor_mac, sensor_role):
+        if sensor_role == 'solar':
             my_data["with_solar"] = True  # Remember for next time we start
 
         new_sensors = [
@@ -46,13 +46,19 @@ async def async_setup_entry(
             PowersensorSensorEntity(hass, sensor_mac, SensorMeasurements.SUMMATION_ENERGY),
         ]
         async_add_entities(new_sensors, True)
-        async_dispatcher_send(hass, f"{DOMAIN}_sensor_added_to_homeassistant", sensor_mac, role)
+        async_dispatcher_send(hass, f"{DOMAIN}_sensor_added_to_homeassistant", sensor_mac, sensor_role)
 
     entry.async_on_unload(
         async_dispatcher_connect(
             hass, f"{DOMAIN}_create_sensor", handle_discovered_sensor
         )
     )
+
+
+    # Possibly unnecessary but will add sensors where the messages came in early.
+    # Hopefully keeps wait time less than 30s
+    for mac, role in my_data['dispatcher'].on_start_sensor_queue.items():
+        await handle_discovered_sensor(mac, role)
 
     # Register the virtual household entities
     household_entities = []

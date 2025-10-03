@@ -14,6 +14,7 @@ class PowersensorMessageDispatcher:
         self._vhh = vhh
         self.plugs = dict()
         self.sensors = dict()
+        self.on_start_sensor_queue = dict()
         self._unsubscribe_from_sensor_added_signal = (
             async_dispatcher_connect(self._hass,
                                      f"{DOMAIN}_sensor_added_to_homeassistant",
@@ -49,6 +50,7 @@ class PowersensorMessageDispatcher:
             if mac not in self.sensors:
                 role = None
                 if 'role' in message:
+                    self.on_start_sensor_queue[mac] = role
                     role = message['role']
                 async_dispatcher_send(self._hass, f"{DOMAIN}_create_sensor", mac, role)
 
