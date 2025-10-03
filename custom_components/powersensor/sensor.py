@@ -46,9 +46,7 @@ async def async_setup_entry(
             PowersensorSensorEntity(hass, sensor_mac, SensorMeasurements.SUMMATION_ENERGY),
         ]
         async_add_entities(new_sensors, True)
-
-    for mac, role in my_data["dispatcher"].sensors.items():
-        await handle_discovered_sensor(mac, role)
+        async_dispatcher_send(hass, f"{DOMAIN}_sensor_added_to_homeassistant", sensor_mac, role)
 
     entry.async_on_unload(
         async_dispatcher_connect(

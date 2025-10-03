@@ -1,7 +1,7 @@
 import logging
 
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.dispatcher import async_dispatcher_send, async_dispatcher_connect
 
 from powersensor_local import PlugApi, VirtualHousehold
 
@@ -14,6 +14,11 @@ class PowersensorMessageDispatcher:
         self._vhh = vhh
         self.plugs = dict()
         self.sensors = dict()
+        self._unsubscribe_from_sensor_added_signal = (
+            async_dispatcher_connect(self._hass,
+                                     f"{DOMAIN}_sensor_added_to_homeassistant",
+                                     self._acknowledge_sensor_added_to_homeassistant)
+        )
 
 
     def add_api(self, mac, network_info):
@@ -45,7 +50,6 @@ class PowersensorMessageDispatcher:
                 role = None
                 if 'role' in message:
                     role = message['role']
-                self.sensors[mac] = role
                 async_dispatcher_send(self._hass, f"{DOMAIN}_create_sensor", mac, role)
 
         # Feed the household calculations
@@ -60,3 +64,9 @@ class PowersensorMessageDispatcher:
         for _ in range(len(self.plugs)):
             _, api = self.plugs.popitem()
             await api.disconnect()
+        if self._unsubscribe_from_sensor_added_signal is not None:
+            self._unsubscribe_from_sensor_added_signal()
+
+    @callback
+    def _acknowledge_sensor_added_to_homeassistant(self,mac, role):
+        self.sensors[mac] = role
