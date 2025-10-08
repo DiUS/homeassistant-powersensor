@@ -7,7 +7,7 @@
   ],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/DiUS/homeassistant-powersensor",
+  "documentation": "https://dius.github.io/homeassistant-powersensor/",
   "homekit": {},
   "integration_type" : "hub",
   "iot_class": "local_push",
