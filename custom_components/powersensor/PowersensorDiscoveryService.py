@@ -4,6 +4,7 @@ from typing import Optional
 from homeassistant.core import HomeAssistant
 from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+import homeassistant.components.zeroconf
 
 from .const import DOMAIN
 
@@ -26,7 +27,7 @@ class PowersensorServiceListener(ServiceListener):
 
     def remove_service(self, zc, type_, name):
         if name in self._plugs:
-            data =  self._plugs[name]
+            data =  self._plugs[name].copy()
             del self._plugs[name]
         else:
             data = None
@@ -81,7 +82,7 @@ class PowersensorDiscoveryService:
             return
 
         self.running = True
-        self.zc = Zeroconf()
+        self.zc = await homeassistant.components.zeroconf.async_get_instance(self._hass)
         self.listener = PowersensorServiceListener(self._hass)
 
         # Create browser
@@ -110,7 +111,7 @@ class PowersensorDiscoveryService:
                 pass
 
         if self.zc:
-            self.zc.close()
+            # self.zc.close()
             self.zc = None
 
         self.browser = None

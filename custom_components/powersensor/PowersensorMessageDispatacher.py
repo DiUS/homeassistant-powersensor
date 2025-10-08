@@ -85,12 +85,12 @@ class PowersensorMessageDispatcher:
 
     @callback
     def _plug_added(self, info):
-        _LOGGER.error(info)
+        _LOGGER.error(f" Request to add plug received: {info}")
 
     @callback
     def _plug_updated(self, info):
-        _LOGGER.error(info)
+        _LOGGER.error(f" Request to update plug received: {info}")
 
     @callback
     def _plug_remove(self,name, info):
-        _LOGGER.error(name,info)
+        _LOGGER.error(f" Request to delete plug received: {info}")
