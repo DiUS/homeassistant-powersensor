@@ -11,7 +11,6 @@ Before installing this integration, ensure you have:
 
 * Home Assistant 2024.1.0 or newer
 * Access to your Home Assistant configuration directory
-* `powersensor_local <https://github.com/DiUS/python-powersensor_local>`_ 2.0.0 or later installed in your Home Assistant instance's python environment
 * Firmware updated to version 8129 or later on powersensor hardware (plugs and sensors)
 
 From Source
