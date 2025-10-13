@@ -8,6 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from . import PowersensorMessageDispatcher
 from .PlugMeasurements import PlugMeasurements
 from .PowersensorHouseholdEntity import HouseholdMeasurements, PowersensorHouseholdEntity
 from .PowersensorPlugEntity import PowersensorPlugEntity
@@ -25,18 +26,32 @@ async def async_setup_entry(
     """Set up the Powersensor sensors."""
     vhh = entry.runtime_data["vhh"]
     my_data = hass.data[DOMAIN][entry.entry_id]
-    plug_sensors = []
-    for plug_mac in my_data['dispatcher'].plugs.keys():
-        plug_sensors.extend([PowersensorPlugEntity(hass, plug_mac, PlugMeasurements.WATTS),
-                    PowersensorPlugEntity(hass, plug_mac, PlugMeasurements.VOLTAGE),
-                    PowersensorPlugEntity(hass, plug_mac, PlugMeasurements.APPARENT_CURRENT),
-                    PowersensorPlugEntity(hass, plug_mac, PlugMeasurements.ACTIVE_CURRENT),
-                    PowersensorPlugEntity(hass, plug_mac, PlugMeasurements.REACTIVE_CURRENT),
-                    PowersensorPlugEntity(hass, plug_mac, PlugMeasurements.SUMMATION_ENERGY)])
+    dispatcher: PowersensorMessageDispatcher = my_data['dispatcher']
 
-    async_add_entities(plug_sensors, True)
 
-    async def handle_discovered_sensor(sensor_mac, sensor_role):
+    async def create_plug(plug_mac_address: str):
+        this_plug_sensors = [PowersensorPlugEntity(hass, plug_mac_address, PlugMeasurements.WATTS),
+                             PowersensorPlugEntity(hass, plug_mac_address, PlugMeasurements.VOLTAGE),
+                             PowersensorPlugEntity(hass, plug_mac_address, PlugMeasurements.ACTIVE_CURRENT),
+                             PowersensorPlugEntity(hass, plug_mac_address, PlugMeasurements.SUMMATION_ENERGY)]
+
+        async_add_entities(this_plug_sensors, True)
+
+    for plug_mac in dispatcher.plugs.keys():
+        await create_plug(plug_mac)
+
+    async def handle_discovered_plug(plug_mac_address: str, host: str, port: int):
+        await create_plug(plug_mac_address)
+        async_dispatcher_send(hass, f"{DOMAIN}_plug_added_to_homeassistant", plug_mac_address, host, port)
+
+    entry.async_on_unload(
+        async_dispatcher_connect(
+            hass, f"{DOMAIN}_create_plug", handle_discovered_plug
+        )
+    )
+    await dispatcher.process_plug_queue()
+
+    async def handle_discovered_sensor(sensor_mac: str, sensor_role: str):
         if sensor_role == 'solar':
             my_data["with_solar"] = True  # Remember for next time we start
 

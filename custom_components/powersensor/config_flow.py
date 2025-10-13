@@ -138,7 +138,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         """Confirm discovery."""
         if user_input is not None:
-            _LOGGER.error(self.hass.data[DOMAIN]["discovered_plugs"])
+            _LOGGER.debug(self.hass.data[DOMAIN]["discovered_plugs"])
             return self.async_create_entry(
                 title="Powersensor",
                 data=self.hass.data[DOMAIN]["discovered_plugs"]

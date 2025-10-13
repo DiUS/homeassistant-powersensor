@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from homeassistant.core import HomeAssistant, callback
@@ -5,7 +6,8 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send, async_dispat
 
 from powersensor_local import PlugApi, VirtualHousehold
 
-from custom_components.powersensor.const import POWER_SENSOR_UPDATE_SIGNAL, DOMAIN
+from custom_components.powersensor.AsyncSet import AsyncSet
+from custom_components.powersensor.const import POWER_SENSOR_UPDATE_SIGNAL, DOMAIN, DEFAULT_PORT
 
 _LOGGER = logging.getLogger(__name__)
 class PowersensorMessageDispatcher:
@@ -13,6 +15,7 @@ class PowersensorMessageDispatcher:
         self._hass = hass
         self._vhh = vhh
         self.plugs = dict()
+        self._known_plugs = set()
         self.sensors = dict()
         self.on_start_sensor_queue = dict()
         self._unsubscribe_from_signals = [
@@ -27,15 +30,75 @@ class PowersensorMessageDispatcher:
                                      self._plug_updated),
             async_dispatcher_connect(self._hass,
                                      f"{DOMAIN}_zeroconf_remove_plug",
-                                     self._plug_remove)
+                                     self._plug_remove),
+            async_dispatcher_connect(self._hass,
+                                     f"{DOMAIN}_plug_added_to_homeassistant",
+                                     self._acknowledge_plug_added_to_homeassistant),
         ]
 
+        self._monitor_add_plug_queue = None
+        self._stop_task = False
+        self._plug_added_queue = AsyncSet()
+        self._safe_to_process_plug_queue = False
 
-    def add_api(self, mac, network_info):
+    async def enqueue_plug_for_adding(self, network_info: dict):
+        _LOGGER.debug(f"Adding to plug processing queue: {network_info}")
+        await self._plug_added_queue.add((network_info['mac'], network_info['host'], network_info['port']))
 
-        _LOGGER.info(f"Adding API for mac={network_info['mac']}, ip={network_info['host']}, port={network_info['port']}")
-        api = PlugApi(mac=network_info['mac'], ip=network_info['host'], port=network_info['port'])
-        self.plugs[mac] = api
+    async def process_plug_queue(self):
+        """Start the background task if not already running."""
+        self._safe_to_process_plug_queue = True
+        if self._monitor_add_plug_queue is None or self._monitor_add_plug_queue.done():
+            self._stop_task = False
+            self._monitor_add_plug_queue = self._hass.async_create_background_task(self._monitor_plug_queue(), name="plug_queue_monitor")
+            _LOGGER.debug("Background task started")
+
+    def _plug_has_been_seen(self, mac_address)->bool:
+        return mac_address in self.plugs or mac_address in self._known_plugs
+
+    async def _monitor_plug_queue(self):
+        """The actual background task loop."""
+        try:
+            while not self._stop_task and self._plug_added_queue:
+                queue_snapshot = await self._plug_added_queue.copy()
+                for mac_address, host, port in queue_snapshot:
+                    if not self._plug_has_been_seen(mac_address):
+                        async_dispatcher_send(self._hass, f"{DOMAIN}_create_plug",
+                                              mac_address, host, port)
+                    else:
+                        _LOGGER.debug(f"Plug: {mac_address} has already been created as an entity in Home Assistant."
+                                      f" Skipping and flushing from queue.")
+                        await self._plug_added_queue.remove((mac_address, host, port))
+
+
+                await asyncio.sleep(5)
+            _LOGGER.debug("Plug queue has been processed!")
+
+        except asyncio.CancelledError:
+            _LOGGER.debug("Plug queue processing cancelled")
+            raise
+        except Exception as e:
+            _LOGGER.error(f"Error in Plug queue processing task: {e}")
+        finally:
+            self._monitor_add_plug_queue = None
+
+    async def stop_processing_plug_queue(self):
+        """Stop the background task."""
+        self._stop_task = True
+        if self._monitor_add_plug_queue and not self._monitor_add_plug_queue.done():
+            self._monitor_add_plug_queue.cancel()
+            try:
+                await self._monitor_add_plug_queue
+            except asyncio.CancelledError:
+                pass
+            _LOGGER.debug("Background task stopped")
+            self._monitor_add_plug_queue = None
+
+    def _create_api(self, mac_address, ip, port):
+        _LOGGER.info(f"Adding API for mac={mac_address}, ip={ip}, port={port}")
+        api = PlugApi(mac=mac_address, ip=ip, port=port)
+        self.plugs[mac_address] = api
+        self._known_plugs.add(mac_address)
         known_evs = [
             'exception',
             'average_flow',
@@ -52,6 +115,10 @@ class PowersensorMessageDispatcher:
         for ev in known_evs:
             api.subscribe(ev, lambda event, message: self.handle_message( event, message))
         api.connect()
+
+    def add_api(self, network_info):
+        self._create_api(mac_address=network_info['mac'], ip=network_info['host'], port=network_info['port'])
+
 
     async def handle_message(self, event: str, message: dict):
         mac = message['mac']
@@ -79,18 +146,55 @@ class PowersensorMessageDispatcher:
             if unsubscribe is not None:
                 unsubscribe()
 
+        await self.stop_processing_plug_queue()
+
     @callback
     def _acknowledge_sensor_added_to_homeassistant(self,mac, role):
         self.sensors[mac] = role
 
     @callback
-    def _plug_added(self, info):
-        _LOGGER.error(f" Request to add plug received: {info}")
+    async def _acknowledge_plug_added_to_homeassistant(self, mac_address, host, port):
+        self._create_api(mac_address, host, port)
+        await self._plug_added_queue.remove((mac_address, host, port))
 
     @callback
-    def _plug_updated(self, info):
-        _LOGGER.error(f" Request to update plug received: {info}")
+    async def _plug_added(self, info):
+        _LOGGER.debug(f" Request to add plug received: {info}")
+        network_info = dict()
+        network_info['mac'] = info['properties'][b'id'].decode('utf-8')
+        network_info['host'] = info['addresses'][0]
+        network_info['port'] = info['port']
+
+        if self._safe_to_process_plug_queue:
+            await self.enqueue_plug_for_adding(network_info)
+            await self.process_plug_queue()
+        else:
+            await self.enqueue_plug_for_adding(network_info)
+
+    @callback
+    async def _plug_updated(self, info):
+        _LOGGER.debug(f" Request to update plug received: {info}")
+        mac = info['properties'][b'id'].decode('utf-8')
+        host = info['addresses'][0]
+        port = info['port']
+        if mac in self.plugs:
+            self.plugs[mac].disconnect()
+
+        if mac in self._known_plugs:
+            self._create_api(mac, host, port)
+        else:
+            network_info = dict()
+            network_info['mac'] = mac
+            network_info['host'] = host
+            network_info['port'] = port
+            await self.enqueue_plug_for_adding(network_info)
+            await self.process_plug_queue()
 
     @callback
     def _plug_remove(self,name, info):
-        _LOGGER.error(f" Request to delete plug received: {info}")
+        _LOGGER.debug(f" Request to delete plug received: {info}")
+        mac = info['properties'][b'id'].decode('utf-8')
+        if mac in self.plugs:
+            self.plugs[mac].disconnect()
+
+        del self.plugs[mac]
