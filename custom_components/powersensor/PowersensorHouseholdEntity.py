@@ -22,6 +22,18 @@ class HouseholdMeasurements(Enum):
     ENERGY_TO_GRID = 7
     ENERGY_SOLAR_GENERATION = 8
 
+ConsumptionMeasurements = [
+    HouseholdMeasurements.POWER_HOME_USE,
+    HouseholdMeasurements.POWER_FROM_GRID,
+    HouseholdMeasurements.ENERGY_HOME_USE,
+    HouseholdMeasurements.ENERGY_FROM_GRID
+]
+ProductionMeasurements = [
+    HouseholdMeasurements.POWER_TO_GRID,
+    HouseholdMeasurements.POWER_SOLAR_GENERATION,
+    HouseholdMeasurements.ENERGY_TO_GRID,
+    HouseholdMeasurements.ENERGY_SOLAR_GENERATION
+]
 @dataclass
 class EntityConfig:
     name : str

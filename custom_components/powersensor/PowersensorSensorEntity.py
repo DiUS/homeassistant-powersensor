@@ -86,5 +86,5 @@ class PowersensorSensorEntity(PowersensorEntity):
         return False
 
     def _default_device_name(self):
-        return f'Powersensor Sensor (MAC address: {self._mac})'
+        return f'Powersensor Sensor (ID: {self._mac})'
 

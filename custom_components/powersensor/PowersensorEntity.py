@@ -28,7 +28,7 @@ class PowersensorEntity(SensorEntity):
         self._hass = hass
         self._mac = mac
         self._model = f"PowersensorDevice"
-        self._device_name = f'Powersensor Device (MAC address: {self._mac})'
+        self._device_name = f'Powersensor Device (ID: {self._mac})'
         self._measurement_name= None
         self._remove_unavailability_tracker = None
         self._timeout = timedelta(seconds=timeout_seconds)  # Adjust as needed

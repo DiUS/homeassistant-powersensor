@@ -10,7 +10,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import PowersensorMessageDispatcher
 from .PlugMeasurements import PlugMeasurements
-from .PowersensorHouseholdEntity import HouseholdMeasurements, PowersensorHouseholdEntity
+from .PowersensorHouseholdEntity import ConsumptionMeasurements, ProductionMeasurements, PowersensorHouseholdEntity
 from .PowersensorPlugEntity import PowersensorPlugEntity
 from .PowersensorSensorEntity import PowersensorSensorEntity
 from .SensorMeasurements import SensorMeasurements
@@ -26,7 +26,7 @@ async def async_setup_entry(
     """Set up the Powersensor sensors."""
     vhh = entry.runtime_data["vhh"]
     my_data = hass.data[DOMAIN][entry.entry_id]
-    dispatcher: PowersensorMessageDispatcher = my_data['dispatcher']
+    dispatcher: PowersensorMessageDispatcher =  entry.runtime_data['dispatcher']
 
 
     async def create_plug(plug_mac_address: str):
@@ -73,13 +73,19 @@ async def async_setup_entry(
 
     # Possibly unnecessary but will add sensors where the messages came in early.
     # Hopefully keeps wait time less than 30s
-    for mac, role in my_data['dispatcher'].on_start_sensor_queue.items():
+    for mac, role in dispatcher.on_start_sensor_queue.items():
         await handle_discovered_sensor(mac, role)
 
     # Register the virtual household entities
     household_entities = []
-    for measurement_type in HouseholdMeasurements:
+    for measurement_type in ConsumptionMeasurements:
         household_entities.append(PowersensorHouseholdEntity(vhh, measurement_type))
+
+    if "with_solar" in my_data.keys():
+        if my_data["with_solar"]:
+            for measurement_type in ProductionMeasurements:
+                household_entities.append(PowersensorHouseholdEntity(vhh, measurement_type))
+
     async_add_entities(household_entities)
 
     async_dispatcher_send(hass, f"{DOMAIN}_setup_complete", True)

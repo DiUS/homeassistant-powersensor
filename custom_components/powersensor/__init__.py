@@ -27,18 +27,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     manifest  = integration.manifest
 
     # Establish create the zeroconf discovery service
-    my_data["zeroconf"] = PowersensorDiscoveryService(hass, manifest["zeroconf"][0])
-    await my_data["zeroconf"].start()
+    zeroconf_listener = PowersensorDiscoveryService(hass, manifest["zeroconf"][0])
+    await zeroconf_listener.start()
 
     # Establish our virtual household
     vhh = VirtualHousehold(my_data["with_solar"] if "with_solar" in my_data else False)
-    entry.runtime_data = { "vhh": vhh }
+    
 
     # TODO: can we move the dispatcher into the entry.runtime_data dict?
-    my_data["dispatcher"] = PowersensorMessageDispatcher(hass, vhh)
+    dispatcher = PowersensorMessageDispatcher(hass, vhh)
     for mac, network_info in entry.data.items():
-        await my_data["dispatcher"].enqueue_plug_for_adding(network_info)
-
+        await dispatcher.enqueue_plug_for_adding(network_info)
+    entry.runtime_data = {"vhh": vhh, "zeroconf": zeroconf_listener, "dispatcher": dispatcher}
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
@@ -47,13 +47,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     _LOGGER.debug("Started unloading for %s", entry.entry_id)
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        if DOMAIN in hass.data.keys():
-            if entry.entry_id in hass.data[DOMAIN].keys():
-                my_data = hass.data[DOMAIN][entry.entry_id]
-                if "dispatcher" in my_data.keys():
-                    await my_data["dispatcher"].disconnect()
-                if "zeroconf" in my_data.keys():
-                    await my_data["zeroconf"].stop()
+        if entry.runtime_data:
+            if "dispatcher" in entry.runtime_data.keys():
+                    await entry.runtime_data["dispatcher"].disconnect()
+            if "zeroconf" in entry.runtime_data.keys():
+                await entry.runtime_data["zeroconf"].stop()
 
     return unload_ok
 

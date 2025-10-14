@@ -90,6 +90,5 @@ class PowersensorPlugEntity(PowersensorEntity):
         }
 
     def _default_device_name(self) -> str:
-        # f'🔌 MAC address: ({self._mac})'
-        return f"Powersensor Plug (MAC Address: {self._mac})"
+        return f"Powersensor Plug (ID: {self._mac}) 🔌"
 
