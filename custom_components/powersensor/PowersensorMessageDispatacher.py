@@ -209,6 +209,7 @@ class PowersensorMessageDispatcher:
             if mac in self.plugs:
                 await self.plugs[mac].disconnect()
                 del self.plugs[mac]
+                del self._known_plug_names[name]
         else:
             _LOGGER.warning(f"Received request to delete api for gateway with name [{name}], but this name"
                             f"is not associated with an existing PlugAPI. Ignoring...")
