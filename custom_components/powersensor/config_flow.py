@@ -94,13 +94,14 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle zeroconf discovery."""
         host = discovery_info.host
         port = discovery_info.port or DEFAULT_PORT
-        name = _extract_device_name(discovery_info) or ""
+        display_name = _extract_device_name(discovery_info) or ""
         properties = discovery_info.properties or {}
         mac = None
         if "id" in properties:
             mac = properties["id"].strip()
 
-        plug_data = {'host' : host,'port' :  port,  'name' : name,'mac': mac}
+        plug_data = {'host' : host,'port' :  port,  'display_name' : display_name,
+                     'mac': mac, 'name': discovery_info.name}
 
         if DOMAIN not in self.hass.data:
             self.hass.data[DOMAIN] = {}
@@ -110,7 +111,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.hass.data[DOMAIN][discovered_plugs_key] = {}
 
         if mac in self.hass.data[DOMAIN][discovered_plugs_key].keys():
-            _LOGGER.warning("Mac found existing in data!")
+            _LOGGER.debug("Mac found existing in data!")
         else:
             self.hass.data[DOMAIN][discovered_plugs_key][mac] = plug_data
 

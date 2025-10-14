@@ -1,5 +1,5 @@
 from datetime import timedelta
-from typing import Callable
+from typing import Callable, Union
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant, callback
@@ -19,7 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 class PowersensorEntity(SensorEntity):
     """Powersensor Plug Class--designed to handle all measurements of the plug--perhaps less expressive"""
     def __init__(self, hass: HomeAssistant, mac : str,
-                 get_config_by_measurement_type: Callable[[SensorMeasurements|PlugMeasurements], dict],
+                 input_config: dict[Union[SensorMeasurements|PlugMeasurements], dict],
                  measurement_type: SensorMeasurements|PlugMeasurements, timeout_seconds: int = 60):
         """Initialize the sensor."""
         self.role = None
@@ -28,13 +28,13 @@ class PowersensorEntity(SensorEntity):
         self._hass = hass
         self._mac = mac
         self._model = f"PowersensorDevice"
-        self._device_name = f'PowersensorDevice MAC address: ({self._mac})'
+        self._device_name = f'Powersensor Device (MAC address: {self._mac})'
         self._measurement_name= None
         self._remove_unavailability_tracker = None
         self._timeout = timedelta(seconds=timeout_seconds)  # Adjust as needed
 
         self.measurement_type = measurement_type
-        config = get_config_by_measurement_type(measurement_type)
+        config = input_config[measurement_type]
         self._attr_unique_id = f"powersensor_{mac}_{measurement_type}"
         self._attr_device_class = config["device_class"]
         self._attr_native_unit_of_measurement = config["unit"]
@@ -91,43 +91,41 @@ class PowersensorEntity(SensorEntity):
     @callback
     def _handle_update(self, event, message):
         """handle pushed data."""
+
+        # event is not presently used, but is passed to maintain flexibility for future development
+
         name_updated = False
-        if event =="remove_sensor":
-            self.async_remove()
-        elif event =="mark_unavailable":
-            self._has_recently_received_update_message = False
-        else:
-            self._has_recently_received_update_message = True
-            if not self.role:
-                if 'role' in message.keys():
-                    self.role = message['role']
-                    name_updated = self._rename_based_on_role()
+        self._has_recently_received_update_message = True
+        if not self.role:
+            if 'role' in message.keys():
+                self.role = message['role']
+                name_updated = self._rename_based_on_role()
 
 
-            if self._message_key in message.keys():
-                if self._message_callback:
-                    self._attr_native_value = self._message_callback( message[self._message_key])
-                else:
-                    self._attr_native_value = message[self._message_key]
-            self._schedule_unavailable()
+        if self._message_key in message.keys():
+            if self._message_callback:
+                self._attr_native_value = self._message_callback( message[self._message_key])
+            else:
+                self._attr_native_value = message[self._message_key]
+        self._schedule_unavailable()
 
-            if name_updated:
-                device_registry = dr.async_get(self.hass)
-                device = device_registry.async_get_device(
-                    identifiers={(DOMAIN, self._mac)}
+        if name_updated:
+            device_registry = dr.async_get(self.hass)
+            device = device_registry.async_get_device(
+                identifiers={(DOMAIN, self._mac)}
+            )
+
+            if device and device.name != self._device_name:
+                # Update the device name
+                device_registry.async_update_device(
+                    device.id,
+                    name=self._device_name
                 )
 
-                if device and device.name != self._device_name:
-                    # Update the device name
-                    device_registry.async_update_device(
-                        device.id,
-                        name=self._device_name
-                    )
-
-                entity_registry = er.async_get(self.hass)
-                entity_registry.async_update_entity(
-                    self.entity_id,
-                    name = self._attr_name
-                )
-            self.async_write_ha_state()
+            entity_registry = er.async_get(self.hass)
+            entity_registry.async_update_entity(
+                self.entity_id,
+                name = self._attr_name
+            )
+        self.async_write_ha_state()
 

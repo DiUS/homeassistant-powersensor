@@ -37,7 +37,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # TODO: can we move the dispatcher into the entry.runtime_data dict?
     my_data["dispatcher"] = PowersensorMessageDispatcher(hass, vhh)
     for mac, network_info in entry.data.items():
-        # my_data["dispatcher"].add_api(network_info)
         await my_data["dispatcher"].enqueue_plug_for_adding(network_info)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -46,7 +45,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    _LOGGER.warning("Started unloading for %s", entry.entry_id)
+    _LOGGER.debug("Started unloading for %s", entry.entry_id)
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         if DOMAIN in hass.data.keys():
             if entry.entry_id in hass.data[DOMAIN].keys():

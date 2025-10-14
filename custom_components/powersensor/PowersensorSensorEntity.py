@@ -12,47 +12,44 @@ import logging
 _LOGGER = logging.getLogger(__name__)
 
 
-
-def get_config(measurement_type : SensorMeasurements)->dict:
-    _config = {
-        SensorMeasurements.Battery: {
-            "name": "Battery Level",
-            "device_class": SensorDeviceClass.VOLTAGE,
-            "unit": UnitOfElectricPotential.VOLT,
-            "precision": 2,
-            'event': 'battery_level',
-            'message_key': 'volts'
-        },
-        SensorMeasurements.WATTS: {
-            "name": "Power",
-            "device_class": SensorDeviceClass.POWER,
-            "unit": UnitOfPower.WATT,
-            "precision": 1,
-            'event': 'average_power',
-            'message_key': 'watts',
-        },
-        SensorMeasurements.SUMMATION_ENERGY: {
-            "name": "Total Energy",
-            "device_class": SensorDeviceClass.ENERGY,
-            "unit": UnitOfEnergy.KILO_WATT_HOUR,
-            "precision": 2,
-            "state_class": SensorStateClass.TOTAL,
-            'event': 'summation_energy',
-            'message_key': 'summation_joules',
-            'callback': lambda v: v / 3600000.0
-        },
+_config = {
+    SensorMeasurements.Battery: {
+        "name": "Battery Level",
+        "device_class": SensorDeviceClass.VOLTAGE,
+        "unit": UnitOfElectricPotential.VOLT,
+        "precision": 2,
+        'event': 'battery_level',
+        'message_key': 'volts'
+    },
+    SensorMeasurements.WATTS: {
+        "name": "Power",
+        "device_class": SensorDeviceClass.POWER,
+        "unit": UnitOfPower.WATT,
+        "precision": 1,
+        'event': 'average_power',
+        'message_key': 'watts',
+    },
+    SensorMeasurements.SUMMATION_ENERGY: {
+        "name": "Total Energy",
+        "device_class": SensorDeviceClass.ENERGY,
+        "unit": UnitOfEnergy.KILO_WATT_HOUR,
+        "precision": 2,
+        "state_class": SensorStateClass.TOTAL,
+        'event': 'summation_energy',
+        'message_key': 'summation_joules',
+        'callback': lambda v: v / 3600000.0
     }
-    return _config[measurement_type]
+}
 
 class PowersensorSensorEntity(PowersensorEntity):
     """Powersensor Plug Class--designed to handle all measurements of the plug--perhaps less expressive"""
     def __init__(self, hass: HomeAssistant, mac : str,
                  measurement_type: SensorMeasurements):
         """Initialize the sensor."""
-        super().__init__(hass, mac, get_config, measurement_type)
+        super().__init__(hass, mac, _config, measurement_type)
         self._model = f"PowersensorSensor"
         self.measurement_type = measurement_type
-        config = get_config(measurement_type)
+        config = _config[measurement_type]
         self._measurement_name = config['name']
         self._device_name = self._default_device_name()
         self._attr_name = f"{self._device_name} {self._measurement_name}"
@@ -89,5 +86,5 @@ class PowersensorSensorEntity(PowersensorEntity):
         return False
 
     def _default_device_name(self):
-        return f'Sensor MAC address: ({self._mac})'
+        return f'Powersensor Sensor (MAC address: {self._mac})'
 

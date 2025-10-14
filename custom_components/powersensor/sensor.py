@@ -40,9 +40,10 @@ async def async_setup_entry(
     for plug_mac in dispatcher.plugs.keys():
         await create_plug(plug_mac)
 
-    async def handle_discovered_plug(plug_mac_address: str, host: str, port: int):
+    async def handle_discovered_plug(plug_mac_address: str, host: str, port: int, name: str):
         await create_plug(plug_mac_address)
-        async_dispatcher_send(hass, f"{DOMAIN}_plug_added_to_homeassistant", plug_mac_address, host, port)
+        async_dispatcher_send(hass, f"{DOMAIN}_plug_added_to_homeassistant",
+                              plug_mac_address, host, port, name)
 
     entry.async_on_unload(
         async_dispatcher_connect(
