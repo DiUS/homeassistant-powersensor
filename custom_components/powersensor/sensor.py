@@ -54,7 +54,18 @@ async def async_setup_entry(
 
     async def handle_discovered_sensor(sensor_mac: str, sensor_role: str):
         if sensor_role == 'solar':
+            add_solar_vhh_entities = False
+            if "with_solar" not in my_data.keys() or not my_data["with_solar"] :
+                add_solar_vhh_entities = True
+
             my_data["with_solar"] = True  # Remember for next time we start
+
+            if add_solar_vhh_entities:
+                solar_household_entities = []
+                for solar_measurement_type in ProductionMeasurements:
+                    household_entities.append(PowersensorHouseholdEntity(vhh, solar_measurement_type))
+
+                async_add_entities(solar_household_entities)
 
         new_sensors = [
             PowersensorSensorEntity(hass, sensor_mac, SensorMeasurements.Battery),
