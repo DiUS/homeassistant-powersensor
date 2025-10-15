@@ -10,7 +10,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import PowersensorMessageDispatcher
 from .PlugMeasurements import PlugMeasurements
-from .PowersensorHouseholdEntity import ConsumptionMeasurements, ProductionMeasurements, PowersensorHouseholdEntity
+from .PowersensorHouseholdEntity import HouseholdMeasurements, PowersensorHouseholdEntity, ConsumptionMeasurements, \
+    ProductionMeasurements
 from .PowersensorPlugEntity import PowersensorPlugEntity
 from .PowersensorSensorEntity import PowersensorSensorEntity
 from .SensorMeasurements import SensorMeasurements
@@ -25,8 +26,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up the Powersensor sensors."""
     vhh = entry.runtime_data["vhh"]
-    my_data = hass.data[DOMAIN][entry.entry_id]
-    dispatcher: PowersensorMessageDispatcher =  entry.runtime_data['dispatcher']
+    dispatcher: PowersensorMessageDispatcher = entry.runtime_data['dispatcher']
 
 
     async def create_plug(plug_mac_address: str):
@@ -54,7 +54,7 @@ async def async_setup_entry(
 
     async def handle_discovered_sensor(sensor_mac: str, sensor_role: str):
         if sensor_role == 'solar':
-            my_data["with_solar"] = True  # Remember for next time we start
+            entry.runtime_data["with_solar"] = True  # Remember for next time we start
 
         new_sensors = [
             PowersensorSensorEntity(hass, sensor_mac, SensorMeasurements.Battery),
@@ -76,15 +76,24 @@ async def async_setup_entry(
     for mac, role in dispatcher.on_start_sensor_queue.items():
         await handle_discovered_sensor(mac, role)
 
+    async def add_solar_to_virtual_household():
+        _LOGGER.debug("Received request to add solar to virtual household")
+        solar_household_entities = []
+        for solar_measurement_type in ProductionMeasurements:
+            solar_household_entities.append(PowersensorHouseholdEntity(vhh, solar_measurement_type))
+
+        async_add_entities(solar_household_entities)
+        async_dispatcher_send(hass, f"{DOMAIN}_solar_added_to_virtual_household", True)
+
+    entry.async_on_unload(
+        async_dispatcher_connect(
+            hass, f"{DOMAIN}_solar_sensor_detected", add_solar_to_virtual_household
+        )
+    )
     # Register the virtual household entities
     household_entities = []
     for measurement_type in ConsumptionMeasurements:
         household_entities.append(PowersensorHouseholdEntity(vhh, measurement_type))
-
-
-    for measurement_type in ProductionMeasurements:
-        household_entities.append(PowersensorHouseholdEntity(vhh, measurement_type))
-
     async_add_entities(household_entities)
 
     async_dispatcher_send(hass, f"{DOMAIN}_setup_complete", True)

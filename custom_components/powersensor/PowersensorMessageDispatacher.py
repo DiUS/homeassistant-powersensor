@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import logging
 
 from homeassistant.core import HomeAssistant, callback
@@ -7,11 +8,11 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send, async_dispat
 from powersensor_local import PlugApi, VirtualHousehold
 
 from custom_components.powersensor.AsyncSet import AsyncSet
-from custom_components.powersensor.const import POWER_SENSOR_UPDATE_SIGNAL, DOMAIN, DEFAULT_PORT
+from custom_components.powersensor.const import POWER_SENSOR_UPDATE_SIGNAL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 class PowersensorMessageDispatcher:
-    def __init__(self, hass: HomeAssistant, vhh: VirtualHousehold,debounce_timeout: float = 60):
+    def __init__(self, hass: HomeAssistant, vhh: VirtualHousehold, debounce_timeout: float = 60):
         self._hass = hass
         self._vhh = vhh
         self.plugs = dict()
@@ -21,6 +22,11 @@ class PowersensorMessageDispatcher:
         self.on_start_sensor_queue = dict()
         self._pending_removals = {}
         self._debounce_seconds = debounce_timeout
+        self.has_solar = False
+        self._virtual_household_has_been_setup = False
+        self._last_request_to_notify_about_solar = datetime.datetime(1970,1,1,0,0,0)
+        self._solar_request_limit = datetime.timedelta(seconds = 10)
+
         self._unsubscribe_from_signals = [
             async_dispatcher_connect(self._hass,
                                      f"{DOMAIN}_sensor_added_to_homeassistant",
@@ -37,6 +43,9 @@ class PowersensorMessageDispatcher:
             async_dispatcher_connect(self._hass,
                                      f"{DOMAIN}_plug_added_to_homeassistant",
                                      self._acknowledge_plug_added_to_homeassistant),
+            async_dispatcher_connect(self._hass,
+                                     f"{DOMAIN}_solar_added_to_virtual_household",
+                                     self._acknowledge_solar_added_to_virtual_household),
         ]
 
         self._monitor_add_plug_queue = None
@@ -98,6 +107,21 @@ class PowersensorMessageDispatcher:
             _LOGGER.debug("Background task stopped")
             self._monitor_add_plug_queue = None
 
+
+    async def stop_pending_removal_tasks(self):
+        """Stop the background removal tasks."""
+        for k in range(len(self._pending_removals)):
+            if self._pending_removals[k] and not self._pending_removals[k].done():
+                self._pending_removals[k].cancel()
+                try:
+                    await self._pending_removals[k]
+                except asyncio.CancelledError:
+                    pass
+                _LOGGER.debug("Background removal task stopped")
+                self._pending_removals[k] = None
+        self._pending_removals = []
+
+
     def _create_api(self, mac_address, ip, port, name):
         _LOGGER.info(f"Creating API for mac={mac_address}, ip={ip}, port={port}")
         api = PlugApi(mac=mac_address, ip=ip, port=port)
@@ -126,20 +150,21 @@ class PowersensorMessageDispatcher:
         self._create_api(mac_address=network_info['mac'], ip=network_info['host'],
                          port=network_info['port'], name=network_info['name'])
 
-
-    async def handle_message(self, event: str, message: dict):
-        mac = message['mac']
+    def cancel_any_pending_removal(self, mac, source):
         task = self._pending_removals.pop(mac, None)
         if task:
             task.cancel()
-            _LOGGER.info(f"Cancelled pending removal for {mac} by new message received from plug.")
+            _LOGGER.info(f"Cancelled pending removal for {mac} by {source}.")
+
+    async def handle_message(self, event: str, message: dict):
+        mac = message['mac']
+        role = message.get('role', None)
+        self.cancel_any_pending_removal(mac, "new message received from plug")
 
         if mac not in self.plugs.keys():
             if mac not in self.sensors:
-                role = None
-                if 'role' in message:
+                if role is not None:
                     self.on_start_sensor_queue[mac] = role
-                    role = message['role']
                 async_dispatcher_send(self._hass, f"{DOMAIN}_create_sensor", mac, role)
 
         # Feed the household calculations
@@ -147,7 +172,14 @@ class PowersensorMessageDispatcher:
             await self._vhh.process_average_power_event(message)
         elif event == 'summation_energy':
             await self._vhh.process_summation_event(message)
-
+        if role == 'solar':
+            self.has_solar = True
+            if not self._virtual_household_has_been_setup:
+                new_time = datetime.datetime.now()
+                if self._last_request_to_notify_about_solar + self._solar_request_limit <new_time:
+                    self._last_request_to_notify_about_solar = new_time
+                    _LOGGER.debug("Notifying integration that solar is present.")
+                    async_dispatcher_send(self._hass, f"{DOMAIN}_solar_sensor_detected")
         async_dispatcher_send(self._hass, f"{POWER_SENSOR_UPDATE_SIGNAL}_{mac}_{event}", event, message)
 
     async def disconnect(self):
@@ -159,10 +191,16 @@ class PowersensorMessageDispatcher:
                 unsubscribe()
 
         await self.stop_processing_plug_queue()
+        await self.stop_pending_removal_tasks()
 
     @callback
     def _acknowledge_sensor_added_to_homeassistant(self,mac, role):
         self.sensors[mac] = role
+
+    @callback
+    def _acknowledge_solar_added_to_virtual_household(self, success):
+        _LOGGER.debug("Solar has been added to virtual household.")
+        self._virtual_household_has_been_setup = success
 
     async def _acknowledge_plug_added_to_homeassistant(self, mac_address, host, port, name):
         _LOGGER.info(f"Adding new API for mac={mac_address}, ip={host}, port={port}")
@@ -174,14 +212,10 @@ class PowersensorMessageDispatcher:
         network_info = dict()
         mac = info['properties'][b'id'].decode('utf-8')
         network_info['mac'] = mac
+        self.cancel_any_pending_removal(mac, "request to add plug")
         network_info['host'] = info['addresses'][0]
         network_info['port'] = info['port']
         network_info['name'] = info['name']
-
-        task = self._pending_removals.pop(mac, None)
-        if task:
-            task.cancel()
-            _LOGGER.info(f"Cancelled pending removal for {mac} by request to add api.")
 
         if self._safe_to_process_plug_queue:
             await self.enqueue_plug_for_adding(network_info)
@@ -192,13 +226,11 @@ class PowersensorMessageDispatcher:
     async def _plug_updated(self, info):
         _LOGGER.debug(f" Request to update plug received: {info}")
         mac = info['properties'][b'id'].decode('utf-8')
+        self.cancel_any_pending_removal(mac, "request to update plug")
         host = info['addresses'][0]
         port = info['port']
         name = info['name']
-        task = self._pending_removals.pop(mac, None)
-        if task:
-            task.cancel()
-            _LOGGER.info(f"Cancelled pending removal for {mac} by request to update api.")
+
         if mac in self.plugs:
             current_api: PlugApi = self.plugs[mac]
             if current_api._listener._ip == host and current_api._listener._port == port:
@@ -218,6 +250,7 @@ class PowersensorMessageDispatcher:
             await self.enqueue_plug_for_adding(network_info)
             await self.process_plug_queue()
 
+
     async def _schedule_plug_removal(self, name, info):
         _LOGGER.debug(f" Request to delete plug received: {info}")
         if name in self._known_plug_names:
@@ -228,7 +261,10 @@ class PowersensorMessageDispatcher:
                     return
 
                 _LOGGER.info(f"Scheduling removal for {name}")
-                self._pending_removals[name] = asyncio.create_task(self._delayed_plug_remove(name,mac))
+                self._pending_removals[mac] = self._hass.async_create_background_task(
+                    self._delayed_plug_remove(name,mac),
+                    name = f"Removal-Task-For-{name}"
+                )
         else:
             _LOGGER.warning(f"Received request to delete api for gateway with name [{name}], but this name"
                             f"is not associated with an existing PlugAPI. Ignoring...")
@@ -242,8 +278,8 @@ class PowersensorMessageDispatcher:
             del self.plugs[mac]
             del self._known_plug_names[name]
         except asyncio.CancelledError:
-            # Task was cancelled because service came back
-            _LOGGER.info(f"Request to remove plug {mac} was canceled by request to update, add plug or new message.")
+            # Task was canceled because service came back
+            _LOGGER.info(f"Request to remove plug {mac} was cancelled by request to update, add plug or new message.")
 
         # Either way were done with this task
         self._pending_removals.pop(name, None)

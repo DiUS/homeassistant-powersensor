@@ -1,6 +1,5 @@
 import asyncio
 from typing import Optional
-import logging
 
 from homeassistant.core import HomeAssistant
 from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
@@ -9,6 +8,7 @@ import homeassistant.components.zeroconf
 
 from .const import DOMAIN
 
+import logging
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -20,6 +20,7 @@ class PowersensorServiceListener(ServiceListener):
         self._debounce_seconds = debounce_timeout
 
     def add_service(self, zc, type_, name):
+        self.cancel_any_pending_removal(name, "request to add")
         info = self.__add_plug(zc, type_, name)
         if info:
             asyncio.run_coroutine_threadsafe(
@@ -29,6 +30,7 @@ class PowersensorServiceListener(ServiceListener):
 
     async def _async_service_add(self, *args):
         async_dispatcher_send(self._hass, f"{DOMAIN}_zeroconf_add_plug", *args)
+
 
     async def _async_delayed_remove(self, name):
         """Actually process the removal after delay."""
@@ -57,29 +59,30 @@ class PowersensorServiceListener(ServiceListener):
             return
 
         _LOGGER.info(f"Scheduling removal for {name}")
-        self._pending_removals[name] = asyncio.create_task(self._async_delayed_remove(name))
-
+        self._pending_removals[name] = asyncio.run_coroutine_threadsafe(
+            self._async_delayed_remove(name),
+            self._hass.loop
+        )
+        print(self._pending_removals)
 
     async def _async_service_remove(self, *args):
         async_dispatcher_send(self._hass, f"{DOMAIN}_zeroconf_remove_plug", *args)
 
     def update_service(self, zc, type_, name):
+        self.cancel_any_pending_removal(name, "request to update")
         info = self.__add_plug(zc, type_, name)
         if info:
             asyncio.run_coroutine_threadsafe(
-                self._async_service_update(self._plugs[name]),
+                self._async_service_update( self._plugs[name]),
                 self._hass.loop
             )
 
     async def _async_service_update(self, *args):
+        # remove from pending tasks if update received
         async_dispatcher_send(self._hass, f"{DOMAIN}_zeroconf_update_plug", *args)
 
     def __add_plug(self, zc, type_, name):
         info = zc.get_service_info(type_, name)
-        task = self._pending_removals.pop(name, None)
-        if task:
-            task.cancel()
-            _LOGGER.info(f"Cancelled pending removal for {name}")
         if info:
             self._plugs[name] = {'type': type_,
                                  'name': name,
@@ -90,6 +93,11 @@ class PowersensorServiceListener(ServiceListener):
                                  }
         return info
 
+    def cancel_any_pending_removal(self, name, source):
+        task = self._pending_removals.pop(name, None)
+        if task:
+            task.cancel()
+            _LOGGER.info(f"Cancelled pending removal for {name} by {source}.")
 
 class PowersensorDiscoveryService:
     def __init__(self, hass: HomeAssistant, service_type: str = "_powersensor._tcp.local."):

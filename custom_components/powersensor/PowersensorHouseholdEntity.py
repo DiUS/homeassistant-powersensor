@@ -34,6 +34,7 @@ ProductionMeasurements = [
     HouseholdMeasurements.ENERGY_TO_GRID,
     HouseholdMeasurements.ENERGY_SOLAR_GENERATION
 ]
+
 @dataclass
 class EntityConfig:
     name : str
