@@ -9,7 +9,7 @@ from homeassistant.loader import async_get_integration
 from powersensor_local import VirtualHousehold
 
 from .PowersensorDiscoveryService import PowersensorDiscoveryService
-from .PowersensorMessageDispatacher import PowersensorMessageDispatcher
+from .PowersensorMessageDispatcher import PowersensorMessageDispatcher
 from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
