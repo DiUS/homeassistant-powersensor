@@ -92,9 +92,7 @@ class PowersensorServiceListener(ServiceListener):
 
 
     def __add_plug(self, zc, type_, name):
-        _LOGGER.error('Before calling get_service_info')
         info = zc.get_service_info(type_, name)
-        _LOGGER.error('After calling get_service_info')
 
         if info:
             self._plugs[name] = {'type': type_,

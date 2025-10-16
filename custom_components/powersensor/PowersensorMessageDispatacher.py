@@ -74,9 +74,14 @@ class PowersensorMessageDispatcher:
             while not self._stop_task and self._plug_added_queue:
                 queue_snapshot = await self._plug_added_queue.copy()
                 for mac_address, host, port, name in queue_snapshot:
+                    #@todo: maybe better to query the entity registry?
                     if not self._plug_has_been_seen(mac_address, name):
                         async_dispatcher_send(self._hass, f"{DOMAIN}_create_plug",
                                               mac_address, host, port, name)
+                    elif mac_address in self._known_plugs and not mac_address in self.plugs:
+                        _LOGGER.info(f"Plug with mac {mac_address} is known, but API is missing."
+                                        f"Reconnecting without requesting entity creation...")
+                        self._create_api(mac_address,host, port, name)
                     else:
                         _LOGGER.debug(f"Plug: {mac_address} has already been created as an entity in Home Assistant."
                                       f" Skipping and flushing from queue.")
