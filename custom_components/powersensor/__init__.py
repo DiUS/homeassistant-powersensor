@@ -4,10 +4,12 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.loader import async_get_integration
 
 from powersensor_local import VirtualHousehold
 
-from .PowersensorMessageDispatacher import PowersensorMessageDispatcher
+from .PowersensorDiscoveryService import PowersensorDiscoveryService
+from .PowersensorMessageDispatcher import PowersensorMessageDispatcher
 from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,30 +21,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {}
-    my_data = hass.data[DOMAIN][entry.entry_id]
+
+    integration = await async_get_integration(hass, DOMAIN)
+    manifest  = integration.manifest
+
+    # Establish create the zeroconf discovery service
+    zeroconf_service= PowersensorDiscoveryService(hass, manifest["zeroconf"][0])
+    await zeroconf_service.start()
 
     # Establish our virtual household
-    vhh = VirtualHousehold(my_data["with_solar"] if "with_solar" in my_data else False)
-    entry.runtime_data = { "vhh": vhh }
+    vhh = VirtualHousehold(False)
+
 
     # TODO: can we move the dispatcher into the entry.runtime_data dict?
-    my_data["dispatcher"] = PowersensorMessageDispatcher(hass, vhh)
+    dispatcher = PowersensorMessageDispatcher(hass, vhh)
     for mac, network_info in entry.data.items():
-        my_data["dispatcher"].add_api(mac, network_info)
+        await dispatcher.enqueue_plug_for_adding(network_info)
 
+    entry.runtime_data = { "vhh": vhh , "dispatcher" : dispatcher, "zeroconf" : zeroconf_service}
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    _LOGGER.warning("Started unloading for %s", entry.entry_id)
+    _LOGGER.debug("Started unloading for %s", entry.entry_id)
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        if DOMAIN in hass.data.keys():
-            if entry.entry_id in hass.data[DOMAIN].keys():
-                my_data = hass.data[DOMAIN][entry.entry_id]
-                if "dispatcher" in my_data.keys():
-                    await my_data["dispatcher"].disconnect()
+        if "dispatcher" in entry.runtime_data .keys():
+            await entry.runtime_data["dispatcher"].disconnect()
+        if "zeroconf" in entry.runtime_data .keys():
+            await entry.runtime_data["zeroconf"].stop()
 
     return unload_ok
 
