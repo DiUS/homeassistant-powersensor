@@ -16,6 +16,7 @@ class PowersensorServiceListener(ServiceListener):
     def __init__(self, hass: HomeAssistant, debounce_timeout: float = 60):
         self._hass = hass
         self._plugs = {}
+        self._discoveries = {}
         self._pending_removals = {}
         self._debounce_seconds = debounce_timeout
 
@@ -49,9 +50,11 @@ class PowersensorServiceListener(ServiceListener):
         except asyncio.CancelledError:
             # Task was cancelled because service came back
             _LOGGER.info(f"Request to remove service {name} was canceled by request to update or add plug.")
+            raise
+        finally:
+            # Either way were done with this task
+            self._pending_removals.pop(name, None)
 
-        # Either way were done with this task
-        self._pending_removals.pop(name, None)
 
     def remove_service(self, zc, type_, name):
         if name in self._pending_removals:
@@ -63,7 +66,6 @@ class PowersensorServiceListener(ServiceListener):
             self._async_delayed_remove(name),
             self._hass.loop
         )
-        print(self._pending_removals)
 
     async def _async_service_remove(self, *args):
         async_dispatcher_send(self._hass, f"{DOMAIN}_zeroconf_remove_plug", *args)
@@ -81,8 +83,19 @@ class PowersensorServiceListener(ServiceListener):
         # remove from pending tasks if update received
         async_dispatcher_send(self._hass, f"{DOMAIN}_zeroconf_update_plug", *args)
 
+    async def _async_get_service_info(self, zc, type_, name):
+        try:
+            info = await zc.async_get_service_info(type_, name, timeout=3000)
+            self._discoveries[name] = info
+        except Exception as e:
+            _LOGGER.error(f"Error retrieving info for {name}")
+
+
     def __add_plug(self, zc, type_, name):
+        _LOGGER.error('Before calling get_service_info')
         info = zc.get_service_info(type_, name)
+        _LOGGER.error('After calling get_service_info')
+
         if info:
             self._plugs[name] = {'type': type_,
                                  'name': name,

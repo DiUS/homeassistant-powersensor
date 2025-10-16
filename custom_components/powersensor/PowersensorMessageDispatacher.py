@@ -26,7 +26,6 @@ class PowersensorMessageDispatcher:
         self._virtual_household_has_been_setup = False
         self._last_request_to_notify_about_solar = datetime.datetime(1970,1,1,0,0,0)
         self._solar_request_limit = datetime.timedelta(seconds = 10)
-
         self._unsubscribe_from_signals = [
             async_dispatcher_connect(self._hass,
                                      f"{DOMAIN}_sensor_added_to_homeassistant",
@@ -224,7 +223,7 @@ class PowersensorMessageDispatcher:
             await self.enqueue_plug_for_adding(network_info)
 
     async def _plug_updated(self, info):
-        _LOGGER.debug(f" Request to update plug received: {info}")
+        _LOGGER.error(f" Request to update plug received: {info}")
         mac = info['properties'][b'id'].decode('utf-8')
         self.cancel_any_pending_removal(mac, "request to update plug")
         host = info['addresses'][0]
@@ -277,9 +276,12 @@ class PowersensorMessageDispatcher:
             await self.plugs[mac].disconnect()
             del self.plugs[mac]
             del self._known_plug_names[name]
+            _LOGGER.info(f"API for plug {mac} disconnected and removed.")
         except asyncio.CancelledError:
             # Task was canceled because service came back
             _LOGGER.info(f"Request to remove plug {mac} was cancelled by request to update, add plug or new message.")
+            raise
+        finally:
+            # Either way were done with this task
+            self._pending_removals.pop(mac, None)
 
-        # Either way were done with this task
-        self._pending_removals.pop(name, None)
