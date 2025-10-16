@@ -11,18 +11,19 @@ Before installing this integration, ensure you have:
 
 * Home Assistant 2024.1.0 or newer
 * Access to your Home Assistant configuration directory
-* `powersensor_local <https://github.com/DiUS/python-powersensor_local>`_ 2.0.0 or later installed in your Home Assistant instance's python environment
-* Firmware updated to version 8107 or later on powersensor hardware (plugs and sensors)
+* Firmware updated to version 8129 or later on powersensor hardware (plugs and sensors)
 
 From Source
 ------------
-Clone or download this repo e.g
+Clone or download this repo e.g.
+
 .. code-block:: bash
 
    git clone https://github.com/DiUS/homeassistant-powersensor.git
 
 Copy or symlink the directory ``custom_components/powersensor`` to your Home Assistant configuration directory.
 When launching homeassistant, e.g.
+
 .. code-block:: bash
 
    hass --config ./config
