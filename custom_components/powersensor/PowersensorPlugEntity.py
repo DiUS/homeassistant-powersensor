@@ -12,7 +12,6 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 
-
 _config = {
     PlugMeasurements.WATTS: {
         "name": "Power",
@@ -28,7 +27,8 @@ _config = {
         "unit": UnitOfElectricPotential.VOLT,
         "precision": 2,
         'event': 'average_power_components',
-        'message_key': 'volts'
+        'message_key': 'volts',
+        'visible': False,
     },
     PlugMeasurements.APPARENT_CURRENT: {
         "name": "Apparent Current",
@@ -36,15 +36,17 @@ _config = {
         "unit": UnitOfElectricCurrent.AMPERE,
         "precision": 2,
         'event': 'average_power_components',
-        'message_key': 'apparent_current'
+        'message_key': 'apparent_current',
+        'visible': False,
     },
     PlugMeasurements.ACTIVE_CURRENT: {
-        "name": "Current", #"Active Current"
+        "name": "Active Current",
         "device_class": SensorDeviceClass.CURRENT,
         "unit": UnitOfElectricCurrent.AMPERE,
         "precision": 2,
         'event': 'average_power_components',
-        'message_key': 'active_current'
+        'message_key': 'active_current',
+        'visible': False,
     },
     PlugMeasurements.REACTIVE_CURRENT: {
         "name": "Reactive Current",
@@ -52,7 +54,8 @@ _config = {
         "unit": UnitOfElectricCurrent.AMPERE,
         "precision": 2,
         'event': 'average_power_components',
-        'message_key': 'reactive_current'
+        'message_key': 'reactive_current',
+        'visible': False,
     },
     PlugMeasurements.SUMMATION_ENERGY: {
         "name": "Total Energy",
@@ -86,7 +89,6 @@ class PowersensorPlugEntity(PowersensorEntity):
             'manufacturer': "Powersensor",
             'model': self._model,
             'name': self._device_name,
-            # "via_device": # if we use this, can it be updated dynamically?
         }
 
     def _default_device_name(self) -> str:

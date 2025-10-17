@@ -62,7 +62,6 @@ class PowersensorSensorEntity(PowersensorEntity):
             'manufacturer': "Powersensor",
             'model': self._model,
             'name': self._device_name ,
-            # "via_device": # if we use this, can it be updated dynamically?
         }
 
     def _ensure_matching_prefix(self):

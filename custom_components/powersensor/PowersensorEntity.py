@@ -40,6 +40,8 @@ class PowersensorEntity(SensorEntity):
         self._attr_native_unit_of_measurement = config["unit"]
         self._attr_device_info = self.device_info
         self._attr_suggested_display_precision = config["precision"]
+        self._attr_entity_registry_visible_default = config['visible'] if 'visible' in config.keys() else True
+
         self._signal = f"{POWER_SENSOR_UPDATE_SIGNAL}_{self._mac}_{config['event']}"
         if 'state_class' in config.keys():
             self._attr_state_class = config['state_class']
