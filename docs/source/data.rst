@@ -12,7 +12,7 @@ This includes
 
 * Energy imported from the grid
 * Total home energy usage
-* Energy exported to the grid (from solar)
+* Energy exported to the grid (from solar , if available)
 * Total solar production
 
 as well as the corresponding instantaneous power consumption/production.
@@ -40,14 +40,13 @@ Each plug exposes 6 entities reflecting the different measurements made by the p
 
 * Power
 * Total Energy Consumption
-* Active Current
-* Reactive Current
-* Apparent Current
+* Current
 * Voltage
 
-Of these only the power and total energy are commonly of interest, and future
-releases intend to make the others optional inclusions when the integration
-is configured.
+The current displayed in the integration represents active current only, but the Powersensor
+api exposes reactive and apparent current as well. Future release plans intend to expose
+all available data, with reactive and apparent current being optional during the configuration
+step for the integration.
 
 The plug readings typically update every second.
 
@@ -66,8 +65,17 @@ showing up as expected, use the mobile app to check which plug it's trying
 to relay though, and the signal strength. If necessary, relocate a plug to
 somewhere closer to the sensor to improve the signal strength.
 
+.. note::
+  Water sensors are not fully supported in the integration at this time.
+  Water sensors will appear in the integration, but will only report
+  sensor battery level. Development for water sensors is on-going and
+  we hope to provide full support in future.
+
 Automations
 -----------
 
 Any of the plug, sensor or virtual household  entities can be used in
-automation workflows.
+automation workflows. To exercise control of other devices in your
+household, first install any relevant integrations for those devices.
+Then follow the usual Home Assistant steps for setting up rules:
+Settings->Automations & Scenes and +Create Automation

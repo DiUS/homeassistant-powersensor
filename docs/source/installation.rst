@@ -15,7 +15,7 @@ Before installing this integration, ensure you have:
 
 From Source
 ------------
-Clone or download this repo e.g.
+If you have commandline access to the machine running Home Assistant, simply clone or download this repo e.g.
 
 .. code-block:: bash
 
@@ -29,5 +29,13 @@ When launching homeassistant, e.g.
    hass --config ./config
 
 Home assistant should automatically discover powersensor devices on the same network.
-Follow the links for Settings/Devices&Services. At the top you should be prompted add ``powersensor`` to your
-homeassistant instance.
+Follow the links for Settings/Devices & Services. At the top you should be prompted add ``powersensor`` to your
+homeassistant instance. Alternatively, you can can click the +Add Integration button and search for ``powersensor``
+
+HA OS
+-----
+If you are installing on a dedicated device running HA OS such as Home Assistant Green, you may need to take a few extra steps.
+If you have ssh access to the box, you can follow the command line instructions above. However, the recommended
+option for most users is to install the `Samba Add-on <https://www.home-assistant.io/common-tasks/os/#installing-and-using-the-samba-add-on>`_.
+Once installed, you should be able to mount your Home Assistant root directory as a network drive. From there,
+clone or download this repo and copy the ``custom_components/powersensor`` directory to your config folder.

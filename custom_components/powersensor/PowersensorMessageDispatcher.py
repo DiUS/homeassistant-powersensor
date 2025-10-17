@@ -228,7 +228,7 @@ class PowersensorMessageDispatcher:
             await self.enqueue_plug_for_adding(network_info)
 
     async def _plug_updated(self, info):
-        _LOGGER.error(f" Request to update plug received: {info}")
+        _LOGGER.debug(f" Request to update plug received: {info}")
         mac = info['properties'][b'id'].decode('utf-8')
         self.cancel_any_pending_removal(mac, "request to update plug")
         host = info['addresses'][0]
