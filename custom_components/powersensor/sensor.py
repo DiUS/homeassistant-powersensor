@@ -56,7 +56,9 @@ async def async_setup_entry(
 
     async def handle_discovered_sensor(sensor_mac: str, sensor_role: str):
         if sensor_role == 'solar':
-            entry.runtime_data["with_solar"] = True  # Remember for next time we start
+            new_data = { **entry.data }
+            new_data['with_solar'] = True  # Remember for next time we start
+            hass.config_entries.async_update_entry(entry, data=new_data)
 
         new_sensors = [
             PowersensorSensorEntity(hass, sensor_mac, SensorMeasurements.Battery),
