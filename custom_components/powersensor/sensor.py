@@ -32,7 +32,9 @@ async def async_setup_entry(
     async def create_plug(plug_mac_address: str):
         this_plug_sensors = [PowersensorPlugEntity(hass, plug_mac_address, PlugMeasurements.WATTS),
                              PowersensorPlugEntity(hass, plug_mac_address, PlugMeasurements.VOLTAGE),
+                             PowersensorPlugEntity(hass, plug_mac_address, PlugMeasurements.APPARENT_CURRENT),
                              PowersensorPlugEntity(hass, plug_mac_address, PlugMeasurements.ACTIVE_CURRENT),
+                             PowersensorPlugEntity(hass, plug_mac_address, PlugMeasurements.REACTIVE_CURRENT),
                              PowersensorPlugEntity(hass, plug_mac_address, PlugMeasurements.SUMMATION_ENERGY)]
 
         async_add_entities(this_plug_sensors, True)
