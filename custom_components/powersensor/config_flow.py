@@ -50,7 +50,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow."""
 
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self):
         """Initialize the config flow."""
@@ -142,6 +142,9 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.debug(self.hass.data[DOMAIN]["discovered_plugs"])
             return self.async_create_entry(
                 title="Powersensor",
-                data=self.hass.data[DOMAIN]["discovered_plugs"]
+                data={
+                    'devices': self.hass.data[DOMAIN]["discovered_plugs"],
+                    'with_solar': False,
+                }
             )
         return self.async_show_form(step_id="discovery_confirm")
