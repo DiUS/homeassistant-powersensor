@@ -7,15 +7,18 @@ household.
 Virtual Household
 ------------------
 Built on top of the sensors, the API provided by `powersensor_local <https://github.com/DiUS/python-powersensor_local>`_
-provides a ``virtual household``. This view is captures the key data most users want to capture at the household level.
+provides a "virtual household". This view captures the key data most users want to capture at the household level.
 This includes
 
-* Energy imported from the grid
 * Total home energy usage
-* Energy exported to the grid (from solar , if available)
+* Energy imported from the grid
+* Energy exported to the grid (from solar)
 * Total solar production
 
 as well as the corresponding instantaneous power consumption/production.
+
+For installations lacking solar, the generation related entities will not
+be available.
 
 .. note::
 
@@ -36,17 +39,38 @@ The household readings update as sensor data becomes available.
 
 Plugs
 -----
-Each plug exposes 6 entities reflecting the different measurements made by the plug these are
+Each plug exposes several entities reflecting the different measuremens
+made by the plug. By default only two are made visible:
 
 * Power
-* Total Energy Consumption
-* Current
-* Voltage
+* Total Energy
 
-The current displayed in the integration represents active current only, but the Powersensor
-api exposes reactive and apparent current as well. Future release plans intend to expose
-all available data, with reactive and apparent current being optional during the configuration
-step for the integration.
+The remaining entities are:
+
+* Volts
+* Active Current
+* Reactive Current
+* Apparent Current
+
+These are of secondary importance and usefulness, and hence aren't visible
+by default. They can be selectively made visible by going to Settings >
+Devices & services > Powersensor and selecting the plug, then clicking on
+the desired entity and then the gear on the following screen. Toggle the
+Visible option there.
+
+The Volts entity shows the mains voltage as seen at that particular plug. Due
+to voltage drop in wires, each plug is likely to show a slightly different
+mains voltage.
+
+Simplified, the Apparent Current entity shows the effective current going
+through the plug. This is the current that may lead to a breaker tripping if
+it gets excessive. The Active and Reactive measurements are the components
+of it, and are likely of little interest outside of curiousity.
+
+.. note::
+  It is more common to hear of Active, Reactive and Apparent *Power*, and
+  the plug's different current measurements should not be confused for power
+  measurements.
 
 The plug readings typically update every second.
 
@@ -78,4 +102,4 @@ Any of the plug, sensor or virtual household  entities can be used in
 automation workflows. To exercise control of other devices in your
 household, first install any relevant integrations for those devices.
 Then follow the usual Home Assistant steps for setting up rules:
-Settings->Automations & Scenes and +Create Automation
+Settings >Automations & Scenes and +Create Automation
