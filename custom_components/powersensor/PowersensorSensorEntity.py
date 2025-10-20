@@ -1,5 +1,5 @@
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.const import UnitOfPower, UnitOfElectricPotential, UnitOfEnergy
+from homeassistant.const import UnitOfPower, UnitOfEnergy, PERCENTAGE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 
@@ -15,11 +15,12 @@ _LOGGER = logging.getLogger(__name__)
 _config = {
     SensorMeasurements.Battery: {
         "name": "Battery Level",
-        "device_class": SensorDeviceClass.VOLTAGE,
-        "unit": UnitOfElectricPotential.VOLT,
-        "precision": 2,
+        "device_class": SensorDeviceClass.BATTERY,
+        "unit": PERCENTAGE,
+        "precision": 0,
         'event': 'battery_level',
-        'message_key': 'volts'
+        'message_key': 'volts',
+        'callback': lambda v: max(min(100.0*(v-3.3)/0.85,100),0) # 0% = 3.3 V , 100% = 4.15 V
     },
     SensorMeasurements.WATTS: {
         "name": "Power",
