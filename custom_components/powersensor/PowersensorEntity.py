@@ -6,7 +6,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util.dt import utcnow
 from .PlugMeasurements import PlugMeasurements
@@ -36,15 +36,15 @@ class PowersensorEntity(SensorEntity):
         self.measurement_type = measurement_type
         config = input_config[measurement_type]
         self._attr_unique_id = f"powersensor_{mac}_{measurement_type}"
-        self._attr_device_class = config["device_class"]
-        self._attr_native_unit_of_measurement = config["unit"]
+        self._attr_device_class = config.get("device_class", None)
+        self._attr_native_unit_of_measurement = config.get("unit", None)
         self._attr_device_info = self.device_info
-        self._attr_suggested_display_precision = config["precision"]
-        self._attr_entity_registry_visible_default = config['visible'] if 'visible' in config.keys() else True
+        self._attr_suggested_display_precision = config.get("precision", None)
+        self._attr_entity_registry_visible_default = config.get('visible', True)
+        self._attr_entity_category = config.get('category', None)
+        self._attr_state_class = config.get('state_class', None)
 
         self._signal = f"{POWER_SENSOR_UPDATE_SIGNAL}_{self._mac}_{config['event']}"
-        if 'state_class' in config.keys():
-            self._attr_state_class = config['state_class']
         self._message_key = config.get('message_key', None)
         self._message_callback = config.get('callback', None)
 
@@ -63,7 +63,7 @@ class PowersensorEntity(SensorEntity):
             self._remove_unavailability_tracker()
 
         self._remove_unavailability_tracker = async_track_point_in_utc_time(
-            self.hass,
+            self._hass,
             self._async_make_unavailable,
             utcnow() + self._timeout
         )
@@ -98,10 +98,12 @@ class PowersensorEntity(SensorEntity):
 
         name_updated = False
         self._has_recently_received_update_message = True
-        if not self.role:
-            if 'role' in message.keys():
-                self.role = message['role']
-                name_updated = self._rename_based_on_role()
+
+        role = message.get('role', None)
+        if role is not None and role != self.role:
+            self.role = role
+            name_updated = self._rename_based_on_role()
+            async_dispatcher_send(self._hass, f"{DOMAIN}_update_role", self._mac, role)
 
 
         if self._message_key in message.keys():
@@ -112,7 +114,7 @@ class PowersensorEntity(SensorEntity):
         self._schedule_unavailable()
 
         if name_updated:
-            device_registry = dr.async_get(self.hass)
+            device_registry = dr.async_get(self._hass)
             device = device_registry.async_get_device(
                 identifiers={(DOMAIN, self._mac)}
             )
@@ -124,7 +126,7 @@ class PowersensorEntity(SensorEntity):
                     name=self._device_name
                 )
 
-            entity_registry = er.async_get(self.hass)
+            entity_registry = er.async_get(self._hass)
             entity_registry.async_update_entity(
                 self.entity_id,
                 name = self._attr_name

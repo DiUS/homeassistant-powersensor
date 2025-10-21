@@ -1,7 +1,7 @@
 import logging
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.const import UnitOfPower, UnitOfElectricPotential, UnitOfElectricCurrent, UnitOfEnergy
+from homeassistant.const import EntityCategory, UnitOfPower, UnitOfElectricPotential, UnitOfElectricCurrent, UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 
@@ -66,6 +66,12 @@ _config = {
         'event': 'summation_energy',
         'message_key': 'summation_joules',
         'callback' : lambda v : v/3600000.0
+    },
+    PlugMeasurements.ROLE: {
+        'name': 'Device Role',
+        'category': EntityCategory.DIAGNOSTIC,
+        'event': 'role',
+        'message_key': 'role',
     },
 }
 

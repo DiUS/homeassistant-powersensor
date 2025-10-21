@@ -145,6 +145,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data={
                     'devices': self.hass.data[DOMAIN]["discovered_plugs"],
                     'with_solar': False,
+                    'roles': {},
                 }
             )
         return self.async_show_form(step_id="discovery_confirm")
