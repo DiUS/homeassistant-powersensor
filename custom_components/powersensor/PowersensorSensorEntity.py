@@ -1,5 +1,5 @@
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.const import UnitOfPower, UnitOfEnergy, PERCENTAGE
+from homeassistant.const import EntityCategory, UnitOfPower, UnitOfEnergy, PERCENTAGE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 
@@ -39,7 +39,13 @@ _config = {
         'event': 'summation_energy',
         'message_key': 'summation_joules',
         'callback': lambda v: v / 3600000.0
-    }
+    },
+    SensorMeasurements.ROLE: {
+        'name': 'Device Role',
+        'category': EntityCategory.DIAGNOSTIC,
+        'event': 'role',
+        'message_key': 'role',
+    },
 }
 
 class PowersensorSensorEntity(PowersensorEntity):

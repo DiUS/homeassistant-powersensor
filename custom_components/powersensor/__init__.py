@@ -26,6 +26,7 @@ PLATFORMS: list[Platform] = [Platform.SENSOR]
 #         mac =,
 #         host =,
 #         port =,
+#         role =,
 #     }
 #     with_solar =,
 #   }

@@ -7,3 +7,4 @@ class PlugMeasurements(Enum):
     ACTIVE_CURRENT = 4
     REACTIVE_CURRENT = 5
     SUMMATION_ENERGY = 6
+    ROLE = 7

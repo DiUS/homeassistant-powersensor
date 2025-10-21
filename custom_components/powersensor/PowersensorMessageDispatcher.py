@@ -185,6 +185,8 @@ class PowersensorMessageDispatcher:
                     _LOGGER.debug("Notifying integration that solar is present.")
                     async_dispatcher_send(self._hass, f"{DOMAIN}_solar_sensor_detected")
         async_dispatcher_send(self._hass, f"{POWER_SENSOR_UPDATE_SIGNAL}_{mac}_{event}", event, message)
+        if role is not None:
+            async_dispatcher_send(self._hass, f"{POWER_SENSOR_UPDATE_SIGNAL}_{mac}_role", 'role', { 'role': role })
 
     async def disconnect(self):
         for _ in range(len(self.plugs)):
