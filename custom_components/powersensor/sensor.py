@@ -52,16 +52,17 @@ async def async_setup_entry(
         persist_entry = False
         new_data = copy.deepcopy({ **entry.data })
 
+        # We only persist actual roles. If a device forgets its role, we want
+        # to keep what we've previously learned.
         if new_role is not None:
-            devices = new_data['devices']
-            if mac_address in devices.keys():
-                info = devices[mac_address]
-                have_role = True if 'role' in info.keys() else False
-                old_role = info['role'] if have_role else None
-                if (not have_role) or (have_role and info['role'] != new_role):
-                    _LOGGER.debug(f"Updating role for {mac_address} from {old_role} to {new_role}")
-                    info['role'] = new_role
-                    persist_entry = True
+            if 'roles' not in new_data.keys():
+                new_data['roles'] = {}
+            roles = new_data['roles']
+            old_role = roles.get(mac_address, None)
+            if old_role is None or old_role != new_role:
+                _LOGGER.debug(f"Updating role for {mac_address} from {old_role} to {new_role}")
+                roles[mac_address] = new_role
+                persist_entry = True
 
         if new_role == 'solar':
             new_data['with_solar'] = True  # Remember for next time we start
@@ -104,6 +105,11 @@ async def async_setup_entry(
         ]
         async_add_entities(new_sensors, True)
         async_dispatcher_send(hass, f"{DOMAIN}_sensor_added_to_homeassistant", sensor_mac, sensor_role)
+        if sensor_role is None:
+            persisted_role = entry.data.get('roles', {}).get(sensor_mac, None)
+            if persisted_role is not None:
+                _LOGGER.info(f"Restored role {persisted_role} for {sensor_mac} due to sensor not reporting role")
+                sensor_role = persisted_role
         # Trigger initial entity role update
         async_dispatcher_send(hass, f"{POWER_SENSOR_UPDATE_SIGNAL}_{sensor_mac}_role", 'role', { 'role': sensor_role })
 

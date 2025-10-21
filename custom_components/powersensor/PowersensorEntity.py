@@ -98,6 +98,7 @@ class PowersensorEntity(SensorEntity):
 
         name_updated = False
         self._has_recently_received_update_message = True
+
         role = message.get('role', None)
         if role is not None and role != self.role:
             self.role = role
