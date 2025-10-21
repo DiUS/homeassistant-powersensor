@@ -158,7 +158,7 @@ class PowersensorMessageDispatcher:
         task = self._pending_removals.pop(mac, None)
         if task:
             task.cancel()
-            _LOGGER.info(f"Cancelled pending removal for {mac} by {source}.")
+            _LOGGER.debug(f"Cancelled pending removal for {mac} by {source}.")
 
     async def handle_message(self, event: str, message: dict):
         mac = message['mac']
@@ -209,7 +209,6 @@ class PowersensorMessageDispatcher:
         self._virtual_household_has_been_setup = success
 
     async def _acknowledge_plug_added_to_homeassistant(self, mac_address, host, port, name):
-        _LOGGER.info(f"Adding new API for mac={mac_address}, ip={host}, port={port}")
         self._create_api(mac_address, host, port, name)
         await self._plug_added_queue.remove((mac_address, host, port, name))
 
@@ -240,7 +239,7 @@ class PowersensorMessageDispatcher:
         if mac in self.plugs:
             current_api: PlugApi = self.plugs[mac]
             if current_api._listener._ip == host and current_api._listener._port == port:
-                _LOGGER.info(f"Request to update plug with mac {mac} does not alter ip from existing API."
+                _LOGGER.debug(f"Request to update plug with mac {mac} does not alter ip from existing API."
                              f"IP still {host} and port is {port}. Skipping update...")
                 return
             await current_api.disconnect()
@@ -266,7 +265,7 @@ class PowersensorMessageDispatcher:
                     # removal for this service is already pending
                     return
 
-                _LOGGER.info(f"Scheduling removal for {name}")
+                _LOGGER.debug(f"Scheduling removal for {name}")
                 self._pending_removals[mac] = self._hass.async_create_background_task(
                     self._delayed_plug_remove(name,mac),
                     name = f"Removal-Task-For-{name}"
@@ -279,14 +278,14 @@ class PowersensorMessageDispatcher:
         """Actually process the removal after delay."""
         try:
             await asyncio.sleep(self._debounce_seconds)
-            _LOGGER.info(f"Request to remove plug {mac} still pending after timeout. Processing remove request...")
+            _LOGGER.debug(f"Request to remove plug {mac} still pending after timeout. Processing remove request...")
             await self.plugs[mac].disconnect()
             del self.plugs[mac]
             del self._known_plug_names[name]
             _LOGGER.info(f"API for plug {mac} disconnected and removed.")
         except asyncio.CancelledError:
             # Task was canceled because service came back
-            _LOGGER.info(f"Request to remove plug {mac} was cancelled by request to update, add plug or new message.")
+            _LOGGER.debug(f"Request to remove plug {mac} was cancelled by request to update, add plug or new message.")
             raise
         finally:
             # Either way were done with this task
