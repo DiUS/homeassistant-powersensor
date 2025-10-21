@@ -63,7 +63,7 @@ class PowersensorEntity(SensorEntity):
             self._remove_unavailability_tracker()
 
         self._remove_unavailability_tracker = async_track_point_in_utc_time(
-            self.hass,
+            self._hass,
             self._async_make_unavailable,
             utcnow() + self._timeout
         )
@@ -112,7 +112,7 @@ class PowersensorEntity(SensorEntity):
         self._schedule_unavailable()
 
         if name_updated:
-            device_registry = dr.async_get(self.hass)
+            device_registry = dr.async_get(self._hass)
             device = device_registry.async_get_device(
                 identifiers={(DOMAIN, self._mac)}
             )
@@ -124,7 +124,7 @@ class PowersensorEntity(SensorEntity):
                     name=self._device_name
                 )
 
-            entity_registry = er.async_get(self.hass)
+            entity_registry = er.async_get(self._hass)
             entity_registry.async_update_entity(
                 self.entity_id,
                 name = self._attr_name
