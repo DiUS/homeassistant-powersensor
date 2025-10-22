@@ -9,15 +9,14 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.service_info import zeroconf
 from homeassistant.helpers.selector import selector
 
-from .const import DEFAULT_PORT, DOMAIN
-from .custom_translations import translate
+from .const import DEFAULT_PORT, DOMAIN, SENSOR_NAME_FORMAT
 
 def _extract_device_name(discovery_info) -> str:
     """Extract a user-friendly device name from zeroconf info."""
     properties = discovery_info.properties or {}
 
     if "id" in properties:
-        return translate("formats.discovery_name") % properties["id"].strip()
+        return f"🔌 Mac({properties["id"].strip()})"
 
     # Fall back to cleaning up the service name
     name = discovery_info.name or ""
@@ -56,7 +55,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         dispatcher = entry.runtime_data["dispatcher"]
 
-        mac2name = { mac: translate("formats.sensor") % mac for mac in dispatcher.sensors }
+        mac2name = { mac: SENSOR_NAME_FORMAT % mac for mac in dispatcher.sensors }
 
         unknown = "<unknown>"
         if user_input is not None:
