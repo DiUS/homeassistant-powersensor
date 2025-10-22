@@ -10,7 +10,7 @@ print(project_root)
 
 # Project information
 project = "homeassistant-powersensor"
-copyright = "2025, DiUS"
+copyright = "2025, Powersensor"
 author = "Powersensor Team!"
 
 html_favicon = "_static/powersensor-logo.png"
