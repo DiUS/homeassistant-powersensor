@@ -78,19 +78,19 @@ class PowersensorSensorEntity(PowersensorEntity):
     def _rename_based_on_role(self):
         if self._device_name == self._default_device_name():
             if self.role =='house-net':
-                self._device_name = "Powersensor Mains Sensor"
+                self._device_name = "Powersensor Mains Sensor ⚡"
                 self._ensure_matching_prefix()
                 return True
             elif self.role == 'water':
-                self._device_name = "Powersensor Water Sensor"
+                self._device_name = "Powersensor Water Sensor ⚡"
                 self._ensure_matching_prefix()
                 return True
             elif self.role == 'solar':
-                self._device_name = "Powersensor Solar Sensor"
+                self._device_name = "Powersensor Solar Sensor ⚡"
                 self._ensure_matching_prefix()
                 return True
         return False
 
     def _default_device_name(self):
-        return f'Powersensor Sensor (ID: {self._mac})'
+        return f'Powersensor Sensor (ID: {self._mac}) ⚡'
 

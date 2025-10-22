@@ -12,6 +12,10 @@
       "discovery_confirm": {
         "description": "Do you want to add Powersensor to Home Assistant?",
         "title": "Powersensor plugs discovered"
+      },
+      "reconfigure" : {
+        "title" : "Update sensor roles",
+        "description": "Note: Roles provided by sensors will override user settings"
       }
     },
     "error": {
@@ -22,7 +26,8 @@
       "no_devices_found": "No devices found on the network",
       "single_instance_allowed": "Already configured. Only a single configuration possible.",
       "already_configured": "Device is already configured",
-      "cannot_connect": "Failed to connect"
+      "cannot_connect": "Failed to connect",
+      "no_sensors_found_without_roles": "All sensors have roles provided!"
     }
   }
 }

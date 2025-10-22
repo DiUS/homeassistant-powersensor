@@ -5,8 +5,10 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.service_info import zeroconf
 from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.helpers.selector import selector
 
 from .const import DEFAULT_PORT, DOMAIN
 
@@ -92,6 +94,12 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
 
         if user_input is not None:
+            # @todo: better handling of mac association
+            for key, role in user_input.items():
+                mac= key[33:-2]
+                _LOGGER.debug(f"Sending {mac}, {role} to {DOMAIN}_update_role")
+                async_dispatcher_send(self.hass, f"{DOMAIN}_update_role",
+                                      mac, role)  # default role
             await self.hass.config_entries.async_reload(entry.entry_id)
             return self.async_abort(reason="Powersensor role updates successful!")
 
@@ -100,19 +108,26 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         for sensor_mac in dispatcher.sensors:
             role = entry.data.get('roles', {}).get(sensor_mac, None)
             if not role:
-                sensor_roles[vol.Optional(f"device_type_{sensor_mac}")] =  vol.In(
-                    ["house-net", "solar", "water", "appliance", "none"]  # Your supported types
+                sensor_roles[vol.Optional(f"Powersensor Sensor [Mac Address: {sensor_mac}]")] =  vol.In(
+                    ["house-net", "solar", "water", "appliance", "none"]
                 )
             else:
-                sensor_roles[vol.Optional(f"device_type_{sensor_mac}", description={"suggested_value": role})] = vol.In(
-                    ["house-net", "solar", "water", "appliance", "none"]  # Your supported types
-                )
+                sensor_roles[vol.Optional(f"Powersensor Sensor [Mac Address: {sensor_mac}]", description={"suggested_value": role})] = selector({
+                    "select" : {
+                    "options" : ["house-net", "solar", "water", "appliance", "none"] ,
+                        "mode" : "dropdown"
+                    }
+                })
+
+        # if not sensor_roles:
+        #     return self.async_abort(reason="no_sensors_found_without_roles")
 
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=vol.Schema(sensor_roles),
             description_placeholders={
-                "device_count": str(len(sensor_roles))
+                "device_count": str(len(sensor_roles)),
+                "docs_url" : "https://dius.github.io/homeassistant-powersensor/data.html#virtual-household"
             }
         )
 
