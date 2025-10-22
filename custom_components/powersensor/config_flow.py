@@ -4,6 +4,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.service_info import zeroconf
 from homeassistant.const import CONF_HOST, CONF_PORT
 
@@ -87,6 +88,33 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     #         data_schema=data_schema,
     #         errors=errors
     #     )
+    async def async_step_reconfigure(self, user_input: dict | None = None)->FlowResult:
+        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+
+        if user_input is not None:
+            await self.hass.config_entries.async_reload(entry.entry_id)
+            return self.async_abort(reason="Powersensor role updates successful!")
+
+        dispatcher = entry.runtime_data["dispatcher"]
+        sensor_roles = {}
+        for sensor_mac in dispatcher.sensors:
+            role = entry.data.get('roles', {}).get(sensor_mac, None)
+            if not role:
+                sensor_roles[vol.Optional(f"device_type_{sensor_mac}")] =  vol.In(
+                    ["house-net", "solar", "water", "appliance", "none"]  # Your supported types
+                )
+            else:
+                sensor_roles[vol.Optional(f"device_type_{sensor_mac}", description={"suggested_value": role})] = vol.In(
+                    ["house-net", "solar", "water", "appliance", "none"]  # Your supported types
+                )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(sensor_roles),
+            description_placeholders={
+                "device_count": str(len(sensor_roles))
+            }
+        )
 
     async def async_step_zeroconf(
         self, discovery_info: zeroconf.ZeroconfServiceInfo
