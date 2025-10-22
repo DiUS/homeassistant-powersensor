@@ -51,7 +51,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     vhh = VirtualHousehold(entry.data['with_solar'])
 
     # Set up message dispatcher
-    dispatcher = PowersensorMessageDispatcher(hass, vhh)
+    dispatcher = PowersensorMessageDispatcher(hass, entry, vhh)
     for mac, network_info in entry.data['devices'].items():
         await dispatcher.enqueue_plug_for_adding(network_info)
 

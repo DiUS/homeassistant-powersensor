@@ -3,6 +3,7 @@ import datetime
 import logging
 
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.dispatcher import async_dispatcher_send, async_dispatcher_connect
 
 from powersensor_local import PlugApi, VirtualHousehold
@@ -12,8 +13,9 @@ from custom_components.powersensor.const import POWER_SENSOR_UPDATE_SIGNAL, DOMA
 
 _LOGGER = logging.getLogger(__name__)
 class PowersensorMessageDispatcher:
-    def __init__(self, hass: HomeAssistant, vhh: VirtualHousehold, debounce_timeout: float = 60):
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, vhh: VirtualHousehold, debounce_timeout: float = 60):
         self._hass = hass
+        self._entry = entry
         self._vhh = vhh
         self.plugs = dict()
         self._known_plugs = set()
@@ -163,6 +165,8 @@ class PowersensorMessageDispatcher:
     async def handle_message(self, event: str, message: dict):
         mac = message['mac']
         role = message.get('role', None)
+        if role is None:
+            role = self._entry.data.get('roles', {}).get(mac, None)
         self.cancel_any_pending_removal(mac, "new message received from plug")
 
         if mac not in self.plugs.keys():
