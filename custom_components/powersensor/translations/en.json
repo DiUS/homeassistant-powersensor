@@ -2,20 +2,16 @@
   "config": {
     "title" : "Powersensor",
     "step": {
-      "user": {
-        "description": "Enter the connection details for your device",
-        "data": {
-          "host": "Host",
-          "port": "Port"
-        }
-      },
       "discovery_confirm": {
         "description": "Do you want to add Powersensor to Home Assistant?",
         "title": "Powersensor plugs discovered"
+      },
+      "reconfigure" : {
+        "title" : "Update sensor roles",
+        "description": "Note: Roles provided by sensors will override user settings"
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect",
       "unknown": "Unexpected error"
     },
     "abort": {

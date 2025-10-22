@@ -93,7 +93,7 @@ class PowersensorHouseholdEntity(SensorEntity):
             'identifiers': {(DOMAIN, "vhh")},
             'manufacturer': "Powersensor",
             'model': "Virtual",
-            'name': "Powersensor Household View",
+            'name': "Powersensor Household View 🏠",
         }
 
     async def async_added_to_hass(self):

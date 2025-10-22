@@ -4,17 +4,20 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.service_info import zeroconf
-from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.helpers.selector import selector
 
-from .const import DEFAULT_PORT, DOMAIN
+from .const import DEFAULT_PORT, DOMAIN, SENSOR_NAME_FORMAT
 
 def _extract_device_name(discovery_info) -> str:
     """Extract a user-friendly device name from zeroconf info."""
     properties = discovery_info.properties or {}
 
     if "id" in properties:
-        return f'🔌 Mac({properties["id"].strip()})'
+        return f"🔌 Mac({properties["id"].strip()})"
+
     # Fall back to cleaning up the service name
     name = discovery_info.name or ""
 
@@ -39,13 +42,6 @@ def _extract_device_name(discovery_info) -> str:
 
 _LOGGER = logging.getLogger(__name__)
 
-STEP_USER_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_HOST): str,
-        vol.Required(CONF_PORT, default=DEFAULT_PORT): int,
-    }
-)
-
 
 class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow."""
@@ -55,38 +51,45 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self):
         """Initialize the config flow."""
 
-    # async def async_step_user(self, user_input=None) -> ConfigFlowResult:
-    #     """Handle manual user setup."""
-    #     errors = {}
-    #
-    #     if user_input is not None:
-    #         # Validate the host/connection here if needed
-    #         try:
-    #             # Set unique ID based on host to prevent duplicates
-    #             await self.async_set_unique_id(user_input[CONF_HOST])
-    #             self._abort_if_unique_id_configured()
-    #
-    #             return self.async_create_entry(
-    #                 title=user_input[CONF_NAME],
-    #                 data=user_input
-    #             )
-    #         except Exception as ex:
-    #             _LOGGER.error("Error validating configuration: %s", ex)
-    #             errors["base"] = "cannot_connect"
-    #
-    #     data_schema = vol.Schema(
-    #         {
-    #             vol.Required(CONF_NAME): cv.string,
-    #             vol.Required(CONF_HOST): cv.string,
-    #             vol.Optional(CONF_PORT, default=80): cv.port,
-    #         }
-    #     )
-    #
-    #     return self.async_show_form(
-    #         step_id="user",
-    #         data_schema=data_schema,
-    #         errors=errors
-    #     )
+    async def async_step_reconfigure(self, user_input: dict | None = None)->FlowResult:
+        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        dispatcher = entry.runtime_data["dispatcher"]
+
+        mac2name = { mac: SENSOR_NAME_FORMAT % mac for mac in dispatcher.sensors }
+
+        unknown = "<unknown>"
+        if user_input is not None:
+            name2mac = { name: mac for mac, name in mac2name.items() }
+            for name, role in user_input.items():
+                mac = name2mac.get(name)
+                if role == unknown:
+                    role = None
+                _LOGGER.debug(f"Applying {role} to {mac}")
+                async_dispatcher_send(self.hass, f"{DOMAIN}_update_role", mac, role)
+            return self.async_abort(reason="Roles successfully applied!")
+
+        sensor_roles = {}
+        for sensor_mac in dispatcher.sensors:
+            role = entry.data.get('roles', {}).get(sensor_mac, unknown)
+            sel = selector({
+                "select": {
+                    "options": [
+                        # Note: these strings are NOT subject to translation
+                        "house-net", "solar", "water", "appliance", unknown
+                    ],
+                    "mode": "dropdown",
+                }
+            })
+            sensor_roles[vol.Optional(mac2name[sensor_mac], description={"suggested_value": role})] = sel
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(sensor_roles),
+            description_placeholders={
+                "device_count": str(len(sensor_roles)),
+                "docs_url" : "https://dius.github.io/homeassistant-powersensor/data.html#virtual-household"
+            }
+        )
 
     async def async_step_zeroconf(
         self, discovery_info: zeroconf.ZeroconfServiceInfo

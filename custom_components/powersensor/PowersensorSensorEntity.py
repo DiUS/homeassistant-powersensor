@@ -6,13 +6,14 @@ from homeassistant.helpers.device_registry import DeviceInfo
 
 from .PowersensorEntity import PowersensorEntity
 from .SensorMeasurements import SensorMeasurements
-from .const import DOMAIN
+from .const import DOMAIN, SENSOR_NAME_FORMAT
 
 import logging
 _LOGGER = logging.getLogger(__name__)
 
 
 _config = {
+    # TODO: change names to translation keys
     SensorMeasurements.Battery: {
         "name": "Battery Level",
         "device_class": SensorDeviceClass.BATTERY,
@@ -77,20 +78,17 @@ class PowersensorSensorEntity(PowersensorEntity):
 
     def _rename_based_on_role(self):
         if self._device_name == self._default_device_name():
-            if self.role =='house-net':
-                self._device_name = "Powersensor Mains Sensor"
-                self._ensure_matching_prefix()
-                return True
-            elif self.role == 'water':
-                self._device_name = "Powersensor Water Sensor"
-                self._ensure_matching_prefix()
-                return True
-            elif self.role == 'solar':
-                self._device_name = "Powersensor Solar Sensor"
+            if self.role =='house-net' or self.role == "water" or self.role == "solar":
+                role2name = {
+                  "house-net": "Powersensor Mains Sensor ⚡",
+                  "solar": "Powersensor Solar Sensor ⚡",
+                  "water": "Powersensor Water Sensor 💧",
+                }
+                self._device_name = role2name[self.role]
                 self._ensure_matching_prefix()
                 return True
         return False
 
     def _default_device_name(self):
-        return f'Powersensor Sensor (ID: {self._mac})'
+        return SENSOR_NAME_FORMAT % self._mac
 
