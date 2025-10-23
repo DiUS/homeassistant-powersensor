@@ -14,6 +14,7 @@ from custom_components.powersensor.const import (
     CREATE_SENSOR_SIGNAL,
     DATA_UPDATE_SIGNAL_FMT_MAC_EVENT,
     PLUG_ADDED_TO_HA_SIGNAL,
+    ROLE_UPDATE_SIGNAL,
     SENSOR_ADDED_TO_HA_SIGNAL,
     SOLAR_ADDED_TO_VHH_SIGNAL,
     SOLAR_SENSOR_DETECTED_SIGNAL,
@@ -175,9 +176,13 @@ class PowersensorMessageDispatcher:
 
     async def handle_message(self, event: str, message: dict):
         mac = message['mac']
-        role = message.get('role', None)
-        if role is None:
-            role = self._entry.data.get('roles', {}).get(mac, None)
+        persisted_role = self._entry.data.get('roles', {}).get(mac, None)
+        role = message.get('role', persisted_role)
+        message['role'] = role
+
+        if role != persisted_role:
+            async_dispatcher_send(self._hass, ROLE_UPDATE_SIGNAL, self._mac, role)
+
         self.cancel_any_pending_removal(mac, "new message received from plug")
 
         if mac not in self.plugs.keys():
@@ -199,12 +204,14 @@ class PowersensorMessageDispatcher:
                     self._last_request_to_notify_about_solar = new_time
                     _LOGGER.debug("Notifying integration that solar is present.")
                     async_dispatcher_send(self._hass, SOLAR_SENSOR_DETECTED_SIGNAL)
+
         async_dispatcher_send(self._hass,
               DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, event), event, message)
-        if role is not None:
-            async_dispatcher_send(
-                self._hass, DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, role),
-                'role', { 'role': role })
+
+        # Synthesise a role type message for the role diagnostic entity
+        async_dispatcher_send(
+            self._hass, DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, role),
+            'role', { 'role': role })
 
     async def disconnect(self):
         for _ in range(len(self.plugs)):

@@ -130,12 +130,7 @@ class PowersensorEntity(SensorEntity):
 
         # event is not presently used, but is passed to maintain flexibility for future development
 
-        name_updated = False
         self._has_recently_received_update_message = True
-
-        role = message.get('role', None)
-        if role is not None and role != self._role:
-            async_dispatcher_send(self._hass, ROLE_UPDATE_SIGNAL, self._mac, role)
 
         if self._message_key in message.keys():
             if self._message_callback:
