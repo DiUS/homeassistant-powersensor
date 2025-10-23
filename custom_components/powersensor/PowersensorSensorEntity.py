@@ -51,17 +51,16 @@ _config = {
 
 class PowersensorSensorEntity(PowersensorEntity):
     """Powersensor Plug Class--designed to handle all measurements of the plug--perhaps less expressive"""
-    def __init__(self, hass: HomeAssistant, mac : str,
+    def __init__(self, hass: HomeAssistant, mac: str, role: str,
                  measurement_type: SensorMeasurements):
         """Initialize the sensor."""
-        super().__init__(hass, mac, _config, measurement_type)
+        super().__init__(hass, mac, role, _config, measurement_type)
         self._model = f"PowersensorSensor"
         self.measurement_type = measurement_type
         config = _config[measurement_type]
         self._measurement_name = config['name']
         self._device_name = self._default_device_name()
         self._attr_name = f"{self._device_name} {self._measurement_name}"
-        self._rename_based_on_role()
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -69,26 +68,26 @@ class PowersensorSensorEntity(PowersensorEntity):
             'identifiers': {(DOMAIN, self._mac)},
             'manufacturer': "Powersensor",
             'model': self._model,
-            'name': self._device_name ,
+            'name': self._device_name,
         }
 
     def _ensure_matching_prefix(self):
         if not self._attr_name.startswith(self._device_name):
             self._attr_name = f"{self._device_name} {self._measurement_name }"
 
-    def _rename_based_on_role(self):
-        if self._device_name == self._default_device_name():
-            if self.role =='house-net' or self.role == "water" or self.role == "solar":
-                role2name = {
-                  "house-net": "Powersensor Mains Sensor ⚡",
-                  "solar": "Powersensor Solar Sensor ⚡",
-                  "water": "Powersensor Water Sensor 💧",
-                }
-                self._device_name = role2name[self.role]
-                self._ensure_matching_prefix()
-                return True
-        return False
+    def _rename_based_on_role(self) -> bool:
+        expected_name = self._default_device_name()
+        if self._device_name != expected_name:
+            self._device_name = expected_name
+            self._ensure_matching_prefix()
+            return True
+        else:
+            return False
 
-    def _default_device_name(self):
-        return SENSOR_NAME_FORMAT % self._mac
-
+    def _default_device_name(self) -> str:
+        role2name = {
+          "house-net": "Powersensor Mains Sensor ⚡",
+          "solar": "Powersensor Solar Sensor ☀️",
+          "water": "Powersensor Water Sensor 💧",
+        }
+        return role2name[self._role] if self._role in [ "house-net", "water", "solar" ] else SENSOR_NAME_FORMAT % self._mac

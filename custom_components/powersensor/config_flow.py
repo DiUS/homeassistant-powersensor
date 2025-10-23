@@ -9,7 +9,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.service_info import zeroconf
 from homeassistant.helpers.selector import selector
 
-from .const import DEFAULT_PORT, DOMAIN, SENSOR_NAME_FORMAT
+from .const import DEFAULT_PORT, DOMAIN, ROLE_UPDATE_SIGNAL, SENSOR_NAME_FORMAT
 
 def _extract_device_name(discovery_info) -> str:
     """Extract a user-friendly device name from zeroconf info."""
@@ -65,7 +65,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if role == unknown:
                     role = None
                 _LOGGER.debug(f"Applying {role} to {mac}")
-                async_dispatcher_send(self.hass, f"{DOMAIN}_update_role", mac, role)
+                async_dispatcher_send(self.hass, ROLE_UPDATE_SIGNAL, mac, role)
             return self.async_abort(reason="Roles successfully applied!")
 
         sensor_roles = {}
