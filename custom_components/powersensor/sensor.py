@@ -136,6 +136,12 @@ async def async_setup_entry(
     for mac, role in dispatcher.on_start_sensor_queue.items():
         await handle_discovered_sensor(mac, role)
 
+    # Register the virtual household entities
+    household_entities = []
+    for measurement_type in ConsumptionMeasurements:
+        household_entities.append(PowersensorHouseholdEntity(vhh, measurement_type))
+    async_add_entities(household_entities)
+
     async def add_solar_to_virtual_household():
         _LOGGER.debug("Received request to add solar to virtual household")
         solar_household_entities = []
@@ -145,13 +151,12 @@ async def async_setup_entry(
         async_add_entities(solar_household_entities)
         async_dispatcher_send(hass, SOLAR_ADDED_TO_VHH_SIGNAL, True)
 
-    entry.async_on_unload(
-        async_dispatcher_connect(
-            hass, SOLAR_SENSOR_DETECTED_SIGNAL, add_solar_to_virtual_household
+    with_solar = entry.data.get('with_solar', False)
+    if with_solar:
+        await add_solar_to_virtual_household()
+    else:
+        entry.async_on_unload(
+            async_dispatcher_connect(
+                hass, SOLAR_SENSOR_DETECTED_SIGNAL, add_solar_to_virtual_household
+            )
         )
-    )
-    # Register the virtual household entities
-    household_entities = []
-    for measurement_type in ConsumptionMeasurements:
-        household_entities.append(PowersensorHouseholdEntity(vhh, measurement_type))
-    async_add_entities(household_entities)
