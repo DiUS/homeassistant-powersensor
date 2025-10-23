@@ -19,11 +19,10 @@ from .SensorMeasurements import SensorMeasurements
 from .const import (CREATE_PLUG_SIGNAL,
     CREATE_SENSOR_SIGNAL,
     DATA_UPDATE_SIGNAL_FMT_MAC_EVENT,
+    HAVE_SOLAR_SENSOR_SIGNAL,
     PLUG_ADDED_TO_HA_SIGNAL,
     ROLE_UPDATE_SIGNAL,
     SENSOR_ADDED_TO_HA_SIGNAL,
-    SOLAR_ADDED_TO_VHH_SIGNAL,
-    SOLAR_SENSOR_DETECTED_SIGNAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -78,13 +77,13 @@ async def async_setup_entry(
         if new_role == 'solar':
             new_data['with_solar'] = True  # Remember for next time we start
             persist_entry = True
-            # In case the role change was via a reconfigure
-            async_dispatcher_send(hass, SOLAR_SENSOR_DETECTED_SIGNAL)
+            async_dispatcher_send(hass, HAVE_SOLAR_SENSOR_SIGNAL)
+
+        # TODO: for house-net/solar <-> we'd need to change the entities too
 
         if persist_entry:
             hass.config_entries.async_update_entry(entry, data=new_data)
 
-    # These events are sent by the entities when their cached role updates
     entry.async_on_unload(
         async_dispatcher_connect(hass, ROLE_UPDATE_SIGNAL, handle_role_update)
     )
@@ -95,8 +94,6 @@ async def async_setup_entry(
         await create_plug(plug_mac_address, plug_role)
         async_dispatcher_send(hass, PLUG_ADDED_TO_HA_SIGNAL,
                               plug_mac_address, host, port, name)
-        async_dispatcher_send(hass, ROLE_UPDATE_SIGNAL,
-                              plug_mac_address, plug_role)
 
     entry.async_on_unload(
         async_dispatcher_connect(
@@ -116,15 +113,9 @@ async def async_setup_entry(
         ]
         async_add_entities(new_sensors, True)
         async_dispatcher_send(hass, SENSOR_ADDED_TO_HA_SIGNAL, sensor_mac, sensor_role)
-        if sensor_role is None:
-            persisted_role = entry.data.get('roles', {}).get(sensor_mac, None)
-            if persisted_role is not None:
-                _LOGGER.info(f"Restored role {persisted_role} for {sensor_mac} due to sensor not reporting role")
-                sensor_role = persisted_role
-        # Trigger initial entity role update
-        async_dispatcher_send(
-            hass, DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (sensor_mac, sensor_role),
-            'role', { 'role': sensor_role })
+
+        if sensor_role == "solar":
+            async_dispatcher_send(hass, HAVE_SOLAR_SENSOR_SIGNAL)
 
     entry.async_on_unload(
         async_dispatcher_connect(
@@ -145,13 +136,12 @@ async def async_setup_entry(
     async_add_entities(household_entities)
 
     async def add_solar_to_virtual_household():
-        _LOGGER.debug("Received request to add solar to virtual household")
+        _LOGGER.debug("Enabling solar components in virtual household")
         solar_household_entities = []
         for solar_measurement_type in ProductionMeasurements:
             solar_household_entities.append(PowersensorHouseholdEntity(vhh, solar_measurement_type))
 
         async_add_entities(solar_household_entities)
-        async_dispatcher_send(hass, SOLAR_ADDED_TO_VHH_SIGNAL, True)
 
     with_solar = entry.data.get('with_solar', False)
     if with_solar:
@@ -159,6 +149,6 @@ async def async_setup_entry(
     else:
         entry.async_on_unload(
             async_dispatcher_connect(
-                hass, SOLAR_SENSOR_DETECTED_SIGNAL, add_solar_to_virtual_household
+                hass, HAVE_SOLAR_SENSOR_SIGNAL, add_solar_to_virtual_household
             )
         )

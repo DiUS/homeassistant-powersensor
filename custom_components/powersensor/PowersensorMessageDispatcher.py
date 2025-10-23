@@ -16,8 +16,6 @@ from custom_components.powersensor.const import (
     PLUG_ADDED_TO_HA_SIGNAL,
     ROLE_UPDATE_SIGNAL,
     SENSOR_ADDED_TO_HA_SIGNAL,
-    SOLAR_ADDED_TO_VHH_SIGNAL,
-    SOLAR_SENSOR_DETECTED_SIGNAL,
     ZEROCONF_ADD_PLUG_SIGNAL,
     ZEROCONF_REMOVE_PLUG_SIGNAL,
     ZEROCONF_UPDATE_PLUG_SIGNAL,
@@ -37,13 +35,8 @@ class PowersensorMessageDispatcher:
         self._pending_removals = {}
         self._debounce_seconds = debounce_timeout
         self.has_solar = False
-        self._virtual_household_has_been_setup = False
-        self._last_request_to_notify_about_solar = datetime.datetime(1970,1,1,0,0,0)
         self._solar_request_limit = datetime.timedelta(seconds = 10)
         self._unsubscribe_from_signals = [
-            async_dispatcher_connect(self._hass,
-                                     SENSOR_ADDED_TO_HA_SIGNAL,
-                                     self._acknowledge_sensor_added_to_homeassistant),
             async_dispatcher_connect(self._hass,
                                      ZEROCONF_ADD_PLUG_SIGNAL,
                                      self._plug_added),
@@ -57,8 +50,8 @@ class PowersensorMessageDispatcher:
                                      PLUG_ADDED_TO_HA_SIGNAL,
                                      self._acknowledge_plug_added_to_homeassistant),
             async_dispatcher_connect(self._hass,
-                                     SOLAR_ADDED_TO_VHH_SIGNAL,
-                                     self._acknowledge_solar_added_to_virtual_household),
+                                     SENSOR_ADDED_TO_HA_SIGNAL,
+                                     self._acknowledge_sensor_added_to_homeassistant),
         ]
 
         self._monitor_add_plug_queue = None
@@ -147,32 +140,47 @@ class PowersensorMessageDispatcher:
         self._known_plugs.add(mac_address)
         self._known_plug_names[name] = mac_address
         known_evs = [
-            'exception',
+            #'exception',
             'average_flow',
             'average_power',
             'average_power_components',
             'battery_level',
-            'now_relaying_for',
             'radio_signal_quality',
             'summation_energy',
             'summation_volume',
-            'uncalibrated_instant_reading',
+            #'uncalibrated_instant_reading',
         ]
 
         for ev in known_evs:
-            api.subscribe(ev, lambda event, message: self.handle_message( event, message))
+            api.subscribe(ev, self.handle_message)
+        api.subscribe('now_relaying_for', self.handle_relaying_for)
         api.connect()
-
-    def add_api(self, network_info):
-        _LOGGER.debug("Manually adding API, this could cause API's and entities to get out of sync")
-        self._create_api(mac_address=network_info['mac'], ip=network_info['host'],
-                         port=network_info['port'], name=network_info['name'])
 
     def cancel_any_pending_removal(self, mac, source):
         task = self._pending_removals.pop(mac, None)
         if task:
             task.cancel()
             _LOGGER.debug(f"Cancelled pending removal for {mac} by {source}.")
+
+    async def handle_relaying_for(self, event: str, message: dict):
+        """Handle a potentially new sensor being reported."""
+        mac = message.get('mac', None)
+        device_type = message.get('device_type', None)
+        if mac is None or device_type != "sensor":
+            _LOGGER.warning(f"Ignoring relayed device with MAC \"{mac}\" and type {device_type}")
+            return
+
+        persisted_role = self._entry.data.get('roles', {}).get(mac, None)
+        role = message.get('role', None)
+        _LOGGER.debug(f"Relayed sensor {mac} with role {role} found")
+
+        if mac not in self.sensors:
+            _LOGGER.debug(f"Reporting new sensor {mac} with role {role}")
+            self.on_start_sensor_queue[mac] = role
+            async_dispatcher_send(self._hass, CREATE_SENSOR_SIGNAL, mac, role)
+        if role != persisted_role:
+            _LOGGER.debug(f"Restoring role for {mac} from {role} to {persisted_role}")
+            async_dispatcher_send(self._hass, ROLE_UPDATE_SIGNAL, mac, persisted_role)
 
     async def handle_message(self, event: str, message: dict):
         mac = message['mac']
@@ -181,29 +189,15 @@ class PowersensorMessageDispatcher:
         message['role'] = role
 
         if role != persisted_role:
-            async_dispatcher_send(self._hass, ROLE_UPDATE_SIGNAL, self._mac, role)
+            async_dispatcher_send(self._hass, ROLE_UPDATE_SIGNAL, mac, role)
 
         self.cancel_any_pending_removal(mac, "new message received from plug")
-
-        if mac not in self.plugs.keys():
-            if mac not in self.sensors:
-                if role is not None:
-                    self.on_start_sensor_queue[mac] = role
-                async_dispatcher_send(self._hass, CREATE_SENSOR_SIGNAL, mac, role)
 
         # Feed the household calculations
         if event == 'average_power':
             await self._vhh.process_average_power_event(message)
         elif event == 'summation_energy':
             await self._vhh.process_summation_event(message)
-        if role == 'solar':
-            self.has_solar = True
-            if not self._virtual_household_has_been_setup:
-                new_time = datetime.datetime.now()
-                if self._last_request_to_notify_about_solar + self._solar_request_limit <new_time:
-                    self._last_request_to_notify_about_solar = new_time
-                    _LOGGER.debug("Notifying integration that solar is present.")
-                    async_dispatcher_send(self._hass, SOLAR_SENSOR_DETECTED_SIGNAL)
 
         async_dispatcher_send(self._hass,
               DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, event), event, message)
@@ -229,10 +223,6 @@ class PowersensorMessageDispatcher:
         self.sensors[mac] = role
 
     @callback
-    def _acknowledge_solar_added_to_virtual_household(self, success):
-        _LOGGER.debug("Solar has been added to virtual household.")
-        self._virtual_household_has_been_setup = success
-
     async def _acknowledge_plug_added_to_homeassistant(self, mac_address, host, port, name):
         self._create_api(mac_address, host, port, name)
         await self._plug_added_queue.remove((mac_address, host, port, name))
