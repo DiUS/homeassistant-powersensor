@@ -78,6 +78,8 @@ async def async_setup_entry(
         if new_role == 'solar':
             new_data['with_solar'] = True  # Remember for next time we start
             persist_entry = True
+            # In case the role change was via a reconfigure
+            async_dispatcher_send(hass, SOLAR_SENSOR_DETECTED_SIGNAL)
 
         if persist_entry:
             hass.config_entries.async_update_entry(entry, data=new_data)
