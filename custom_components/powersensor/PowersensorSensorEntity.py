@@ -87,7 +87,7 @@ class PowersensorSensorEntity(PowersensorEntity):
     def _default_device_name(self) -> str:
         role2name = {
           "house-net": "Powersensor Mains Sensor ⚡",
-          "solar": "Powersensor Solar Sensor ⚡",
+          "solar": "Powersensor Solar Sensor ☀️",
           "water": "Powersensor Water Sensor 💧",
         }
         return role2name[self._role] if self._role in [ "house-net", "water", "solar" ] else SENSOR_NAME_FORMAT % self._mac
