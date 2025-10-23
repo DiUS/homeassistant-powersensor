@@ -11,18 +11,18 @@ from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util.dt import utcnow
 from .PlugMeasurements import PlugMeasurements
 from .SensorMeasurements import SensorMeasurements
-from .const import DOMAIN, POWER_SENSOR_UPDATE_SIGNAL
+from .const import DATA_UPDATE_SIGNAL_FMT_MAC_EVENT, DOMAIN, ROLE_UPDATE_SIGNAL
 
 import logging
 _LOGGER = logging.getLogger(__name__)
 
 class PowersensorEntity(SensorEntity):
     """Powersensor Plug Class--designed to handle all measurements of the plug--perhaps less expressive"""
-    def __init__(self, hass: HomeAssistant, mac : str,
+    def __init__(self, hass: HomeAssistant, mac: str, role: str,
                  input_config: dict[Union[SensorMeasurements|PlugMeasurements], dict],
                  measurement_type: SensorMeasurements|PlugMeasurements, timeout_seconds: int = 60):
         """Initialize the sensor."""
-        self.role = None
+        self._role = role
         self._has_recently_received_update_message = False
         self._attr_native_value = 0.0
         self._hass = hass
@@ -44,7 +44,7 @@ class PowersensorEntity(SensorEntity):
         self._attr_entity_category = config.get('category', None)
         self._attr_state_class = config.get('state_class', None)
 
-        self._signal = f"{POWER_SENSOR_UPDATE_SIGNAL}_{self._mac}_{config['event']}"
+        self._signal = DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, config['event'])
         self._message_key = config.get('message_key', None)
         self._message_callback = config.get('callback', None)
 
@@ -81,6 +81,11 @@ class PowersensorEntity(SensorEntity):
             self._signal,
             self._handle_update
         ))
+        self.async_on_remove(async_dispatcher_connect(
+            self._hass,
+            ROLE_UPDATE_SIGNAL,
+            self._handle_role_update
+        ))
 
     async def async_will_remove_from_hass(self):
         """Clean up."""
@@ -91,27 +96,12 @@ class PowersensorEntity(SensorEntity):
         return False
 
     @callback
-    def _handle_update(self, event, message):
-        """handle pushed data."""
+    def _handle_role_update(self, mac: str, role: str):
+        if self._mac != mac or self._role == role:
+            return
 
-        # event is not presently used, but is passed to maintain flexibility for future development
-
-        name_updated = False
-        self._has_recently_received_update_message = True
-
-        role = message.get('role', None)
-        if role is not None and role != self.role:
-            self.role = role
-            name_updated = self._rename_based_on_role()
-            async_dispatcher_send(self._hass, f"{DOMAIN}_update_role", self._mac, role)
-
-
-        if self._message_key in message.keys():
-            if self._message_callback:
-                self._attr_native_value = self._message_callback( message[self._message_key])
-            else:
-                self._attr_native_value = message[self._message_key]
-        self._schedule_unavailable()
+        self._role = role
+        name_updated = self._rename_based_on_role()
 
         if name_updated:
             device_registry = dr.async_get(self._hass)
@@ -131,5 +121,27 @@ class PowersensorEntity(SensorEntity):
                 self.entity_id,
                 name = self._attr_name
             )
-        self.async_write_ha_state()
 
+            self.async_write_ha_state()
+
+    @callback
+    def _handle_update(self, event, message):
+        """handle pushed data."""
+
+        # event is not presently used, but is passed to maintain flexibility for future development
+
+        name_updated = False
+        self._has_recently_received_update_message = True
+
+        role = message.get('role', None)
+        if role is not None and role != self._role:
+            async_dispatcher_send(self._hass, ROLE_UPDATE_SIGNAL, self._mac, role)
+
+        if self._message_key in message.keys():
+            if self._message_callback:
+                self._attr_native_value = self._message_callback( message[self._message_key])
+            else:
+                self._attr_native_value = message[self._message_key]
+        self._schedule_unavailable()
+
+        self.async_write_ha_state()

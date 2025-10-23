@@ -16,7 +16,16 @@ from .PowersensorHouseholdEntity import HouseholdMeasurements, PowersensorHouseh
 from .PowersensorPlugEntity import PowersensorPlugEntity
 from .PowersensorSensorEntity import PowersensorSensorEntity
 from .SensorMeasurements import SensorMeasurements
-from .const import POWER_SENSOR_UPDATE_SIGNAL, DOMAIN
+from .const import (CREATE_PLUG_SIGNAL,
+    CREATE_SENSOR_SIGNAL,
+    DATA_UPDATE_SIGNAL_FMT_MAC_EVENT,
+    PLUG_ADDED_TO_HA_SIGNAL,
+    ROLE_UPDATE_SIGNAL,
+    SENSOR_ADDED_TO_HA_SIGNAL,
+    SOLAR_ADDED_TO_VHH_SIGNAL,
+    SOLAR_SENSOR_DETECTED_SIGNAL,
+)
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -30,21 +39,23 @@ async def async_setup_entry(
     dispatcher: PowersensorMessageDispatcher = entry.runtime_data['dispatcher']
 
 
-    async def create_plug(plug_mac_address: str):
+    plug_role = "appliance"
+
+    async def create_plug(plug_mac_address: str, role: str):
         this_plug_sensors = [
-            PowersensorPlugEntity(hass, plug_mac_address, PlugMeasurements.WATTS),
-            PowersensorPlugEntity(hass, plug_mac_address, PlugMeasurements.VOLTAGE),
-            PowersensorPlugEntity(hass, plug_mac_address, PlugMeasurements.APPARENT_CURRENT),
-            PowersensorPlugEntity(hass, plug_mac_address, PlugMeasurements.ACTIVE_CURRENT),
-            PowersensorPlugEntity(hass, plug_mac_address, PlugMeasurements.REACTIVE_CURRENT),
-            PowersensorPlugEntity(hass, plug_mac_address, PlugMeasurements.SUMMATION_ENERGY),
-            PowersensorPlugEntity(hass, plug_mac_address, PlugMeasurements.ROLE),
+            PowersensorPlugEntity(hass, plug_mac_address, role, PlugMeasurements.WATTS),
+            PowersensorPlugEntity(hass, plug_mac_address, role, PlugMeasurements.VOLTAGE),
+            PowersensorPlugEntity(hass, plug_mac_address, role, PlugMeasurements.APPARENT_CURRENT),
+            PowersensorPlugEntity(hass, plug_mac_address, role, PlugMeasurements.ACTIVE_CURRENT),
+            PowersensorPlugEntity(hass, plug_mac_address, role, PlugMeasurements.REACTIVE_CURRENT),
+            PowersensorPlugEntity(hass, plug_mac_address, role, PlugMeasurements.SUMMATION_ENERGY),
+            PowersensorPlugEntity(hass, plug_mac_address, role, PlugMeasurements.ROLE),
         ]
 
         async_add_entities(this_plug_sensors, True)
 
     for plug_mac in dispatcher.plugs.keys():
-        await create_plug(plug_mac)
+        await create_plug(plug_mac, plug_role)
 
 
     # Role update support
@@ -73,23 +84,21 @@ async def async_setup_entry(
 
     # These events are sent by the entities when their cached role updates
     entry.async_on_unload(
-        async_dispatcher_connect(
-            hass, f"{DOMAIN}_update_role", handle_role_update
-        )
+        async_dispatcher_connect(hass, ROLE_UPDATE_SIGNAL, handle_role_update)
     )
 
 
     # Automatic plug discovery
     async def handle_discovered_plug(plug_mac_address: str, host: str, port: int, name: str):
-        await create_plug(plug_mac_address)
-        async_dispatcher_send(hass, f"{DOMAIN}_plug_added_to_homeassistant",
+        await create_plug(plug_mac_address, plug_role)
+        async_dispatcher_send(hass, PLUG_ADDED_TO_HA_SIGNAL,
                               plug_mac_address, host, port, name)
-        async_dispatcher_send(hass, f"{DOMAIN}_update_role",
-                              plug_mac_address, "appliance") # default role
+        async_dispatcher_send(hass, ROLE_UPDATE_SIGNAL,
+                              plug_mac_address, plug_role)
 
     entry.async_on_unload(
         async_dispatcher_connect(
-            hass, f"{DOMAIN}_create_plug", handle_discovered_plug
+            hass, CREATE_PLUG_SIGNAL, handle_discovered_plug
         )
     )
     await dispatcher.process_plug_queue()
@@ -98,24 +107,26 @@ async def async_setup_entry(
     # Automatic sensor discovery
     async def handle_discovered_sensor(sensor_mac: str, sensor_role: str):
         new_sensors = [
-            PowersensorSensorEntity(hass, sensor_mac, SensorMeasurements.Battery),
-            PowersensorSensorEntity(hass, sensor_mac, SensorMeasurements.WATTS),
-            PowersensorSensorEntity(hass, sensor_mac, SensorMeasurements.SUMMATION_ENERGY),
-            PowersensorSensorEntity(hass, sensor_mac, SensorMeasurements.ROLE),
+            PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.Battery),
+            PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.WATTS),
+            PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.SUMMATION_ENERGY),
+            PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.ROLE),
         ]
         async_add_entities(new_sensors, True)
-        async_dispatcher_send(hass, f"{DOMAIN}_sensor_added_to_homeassistant", sensor_mac, sensor_role)
+        async_dispatcher_send(hass, SENSOR_ADDED_TO_HA_SIGNAL, sensor_mac, sensor_role)
         if sensor_role is None:
             persisted_role = entry.data.get('roles', {}).get(sensor_mac, None)
             if persisted_role is not None:
                 _LOGGER.info(f"Restored role {persisted_role} for {sensor_mac} due to sensor not reporting role")
                 sensor_role = persisted_role
         # Trigger initial entity role update
-        async_dispatcher_send(hass, f"{POWER_SENSOR_UPDATE_SIGNAL}_{sensor_mac}_role", 'role', { 'role': sensor_role })
+        async_dispatcher_send(
+            hass, DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (sensor_mac, sensor_role),
+            'role', { 'role': sensor_role })
 
     entry.async_on_unload(
         async_dispatcher_connect(
-            hass, f"{DOMAIN}_create_sensor", handle_discovered_sensor
+            hass, CREATE_SENSOR_SIGNAL, handle_discovered_sensor
         )
     )
 
@@ -132,11 +143,11 @@ async def async_setup_entry(
             solar_household_entities.append(PowersensorHouseholdEntity(vhh, solar_measurement_type))
 
         async_add_entities(solar_household_entities)
-        async_dispatcher_send(hass, f"{DOMAIN}_solar_added_to_virtual_household", True)
+        async_dispatcher_send(hass, SOLAR_ADDED_TO_VHH_SIGNAL, True)
 
     entry.async_on_unload(
         async_dispatcher_connect(
-            hass, f"{DOMAIN}_solar_sensor_detected", add_solar_to_virtual_household
+            hass, SOLAR_SENSOR_DETECTED_SIGNAL, add_solar_to_virtual_household
         )
     )
     # Register the virtual household entities
@@ -144,6 +155,3 @@ async def async_setup_entry(
     for measurement_type in ConsumptionMeasurements:
         household_entities.append(PowersensorHouseholdEntity(vhh, measurement_type))
     async_add_entities(household_entities)
-
-    async_dispatcher_send(hass, f"{DOMAIN}_setup_complete", True)
-

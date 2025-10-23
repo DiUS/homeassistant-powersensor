@@ -9,7 +9,18 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send, async_dispat
 from powersensor_local import PlugApi, VirtualHousehold
 
 from custom_components.powersensor.AsyncSet import AsyncSet
-from custom_components.powersensor.const import POWER_SENSOR_UPDATE_SIGNAL, DOMAIN
+from custom_components.powersensor.const import (
+    CREATE_PLUG_SIGNAL,
+    CREATE_SENSOR_SIGNAL,
+    DATA_UPDATE_SIGNAL_FMT_MAC_EVENT,
+    PLUG_ADDED_TO_HA_SIGNAL,
+    SENSOR_ADDED_TO_HA_SIGNAL,
+    SOLAR_ADDED_TO_VHH_SIGNAL,
+    SOLAR_SENSOR_DETECTED_SIGNAL,
+    ZEROCONF_ADD_PLUG_SIGNAL,
+    ZEROCONF_REMOVE_PLUG_SIGNAL,
+    ZEROCONF_UPDATE_PLUG_SIGNAL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 class PowersensorMessageDispatcher:
@@ -30,22 +41,22 @@ class PowersensorMessageDispatcher:
         self._solar_request_limit = datetime.timedelta(seconds = 10)
         self._unsubscribe_from_signals = [
             async_dispatcher_connect(self._hass,
-                                     f"{DOMAIN}_sensor_added_to_homeassistant",
+                                     SENSOR_ADDED_TO_HA_SIGNAL,
                                      self._acknowledge_sensor_added_to_homeassistant),
             async_dispatcher_connect(self._hass,
-                                     f"{DOMAIN}_zeroconf_add_plug",
+                                     ZEROCONF_ADD_PLUG_SIGNAL,
                                      self._plug_added),
             async_dispatcher_connect(self._hass,
-                                     f"{DOMAIN}_zeroconf_update_plug",
+                                     ZEROCONF_UPDATE_PLUG_SIGNAL,
                                      self._plug_updated),
             async_dispatcher_connect(self._hass,
-                                     f"{DOMAIN}_zeroconf_remove_plug",
+                                     ZEROCONF_REMOVE_PLUG_SIGNAL,
                                      self._schedule_plug_removal),
             async_dispatcher_connect(self._hass,
-                                     f"{DOMAIN}_plug_added_to_homeassistant",
+                                     PLUG_ADDED_TO_HA_SIGNAL,
                                      self._acknowledge_plug_added_to_homeassistant),
             async_dispatcher_connect(self._hass,
-                                     f"{DOMAIN}_solar_added_to_virtual_household",
+                                     SOLAR_ADDED_TO_VHH_SIGNAL,
                                      self._acknowledge_solar_added_to_virtual_household),
         ]
 
@@ -78,7 +89,7 @@ class PowersensorMessageDispatcher:
                 for mac_address, host, port, name in queue_snapshot:
                     #@todo: maybe better to query the entity registry?
                     if not self._plug_has_been_seen(mac_address, name):
-                        async_dispatcher_send(self._hass, f"{DOMAIN}_create_plug",
+                        async_dispatcher_send(self._hass, CREATE_PLUG_SIGNAL,
                                               mac_address, host, port, name)
                     elif mac_address in self._known_plugs and not mac_address in self.plugs:
                         _LOGGER.info(f"Plug with mac {mac_address} is known, but API is missing."
@@ -173,7 +184,7 @@ class PowersensorMessageDispatcher:
             if mac not in self.sensors:
                 if role is not None:
                     self.on_start_sensor_queue[mac] = role
-                async_dispatcher_send(self._hass, f"{DOMAIN}_create_sensor", mac, role)
+                async_dispatcher_send(self._hass, CREATE_SENSOR_SIGNAL, mac, role)
 
         # Feed the household calculations
         if event == 'average_power':
@@ -187,10 +198,13 @@ class PowersensorMessageDispatcher:
                 if self._last_request_to_notify_about_solar + self._solar_request_limit <new_time:
                     self._last_request_to_notify_about_solar = new_time
                     _LOGGER.debug("Notifying integration that solar is present.")
-                    async_dispatcher_send(self._hass, f"{DOMAIN}_solar_sensor_detected")
-        async_dispatcher_send(self._hass, f"{POWER_SENSOR_UPDATE_SIGNAL}_{mac}_{event}", event, message)
+                    async_dispatcher_send(self._hass, SOLAR_SENSOR_DETECTED_SIGNAL)
+        async_dispatcher_send(self._hass,
+              DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, event), event, message)
         if role is not None:
-            async_dispatcher_send(self._hass, f"{POWER_SENSOR_UPDATE_SIGNAL}_{mac}_role", 'role', { 'role': role })
+            async_dispatcher_send(
+                self._hass, DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, role),
+                'role', { 'role': role })
 
     async def disconnect(self):
         for _ in range(len(self.plugs)):

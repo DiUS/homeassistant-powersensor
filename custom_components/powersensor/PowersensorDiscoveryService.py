@@ -6,7 +6,11 @@ from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 import homeassistant.components.zeroconf
 
-from .const import DOMAIN
+from .const import (
+    ZEROCONF_ADD_PLUG_SIGNAL,
+    ZEROCONF_REMOVE_PLUG_SIGNAL,
+    ZEROCONF_UPDATE_PLUG_SIGNAL,
+)
 
 import logging
 _LOGGER = logging.getLogger(__name__)
@@ -30,7 +34,7 @@ class PowersensorServiceListener(ServiceListener):
             )
 
     async def _async_service_add(self, *args):
-        async_dispatcher_send(self._hass, f"{DOMAIN}_zeroconf_add_plug", *args)
+        async_dispatcher_send(self._hass, ZEROCONF_ADD_PLUG_SIGNAL, *args)
 
 
     async def _async_delayed_remove(self, name):
@@ -68,7 +72,7 @@ class PowersensorServiceListener(ServiceListener):
         )
 
     async def _async_service_remove(self, *args):
-        async_dispatcher_send(self._hass, f"{DOMAIN}_zeroconf_remove_plug", *args)
+        async_dispatcher_send(self._hass, ZEROCONF_REMOVE_PLUG_SIGNAL, *args)
 
     def update_service(self, zc, type_, name):
         self.cancel_any_pending_removal(name, "request to update")
@@ -81,7 +85,7 @@ class PowersensorServiceListener(ServiceListener):
 
     async def _async_service_update(self, *args):
         # remove from pending tasks if update received
-        async_dispatcher_send(self._hass, f"{DOMAIN}_zeroconf_update_plug", *args)
+        async_dispatcher_send(self._hass, ZEROCONF_UPDATE_PLUG_SIGNAL, *args)
 
     async def _async_get_service_info(self, zc, type_, name):
         try:

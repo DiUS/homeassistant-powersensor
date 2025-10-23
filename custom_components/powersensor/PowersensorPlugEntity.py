@@ -79,9 +79,9 @@ _config = {
 
 class PowersensorPlugEntity(PowersensorEntity):
     """Powersensor Plug Class--designed to handle all measurements of the plug--perhaps less expressive"""
-    def __init__(self, hass: HomeAssistant, mac_address: str, measurement_type: PlugMeasurements):
+    def __init__(self, hass: HomeAssistant, mac_address: str, role: str, measurement_type: PlugMeasurements):
         """Initialize the sensor."""
-        super().__init__(hass, mac_address, _config, measurement_type)
+        super().__init__(hass, mac_address, role, _config, measurement_type)
         self._model = f"PowersensorPlug"
         self.measurement_type = measurement_type
         config = _config[measurement_type]
