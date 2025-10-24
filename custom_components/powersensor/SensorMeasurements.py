@@ -6,3 +6,4 @@ class SensorMeasurements(Enum):
     WATTS = 2
     SUMMATION_ENERGY = 3
     ROLE = 4
+    RSSI = 5

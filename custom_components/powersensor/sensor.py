@@ -110,6 +110,7 @@ async def async_setup_entry(
             PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.WATTS),
             PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.SUMMATION_ENERGY),
             PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.ROLE),
+            PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.RSSI),
         ]
         async_add_entities(new_sensors, True)
         async_dispatcher_send(hass, SENSOR_ADDED_TO_HA_SIGNAL, sensor_mac, sensor_role)

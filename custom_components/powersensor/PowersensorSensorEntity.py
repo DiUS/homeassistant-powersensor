@@ -1,5 +1,5 @@
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.const import EntityCategory, UnitOfPower, UnitOfEnergy, PERCENTAGE
+from homeassistant.const import EntityCategory, UnitOfPower, UnitOfEnergy, PERCENTAGE, SIGNAL_STRENGTH_DECIBELS
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 
@@ -46,6 +46,15 @@ _config = {
         'category': EntityCategory.DIAGNOSTIC,
         'event': 'role',
         'message_key': 'role',
+    },
+    SensorMeasurements.RSSI: {
+        'name': 'Signal strength (Bluetooth)',
+        "device_class": SensorDeviceClass.SIGNAL_STRENGTH,
+        "unit": SIGNAL_STRENGTH_DECIBELS,
+        "precision": 1,
+        'category': EntityCategory.DIAGNOSTIC,
+        'event': 'radio_signal_quality',
+        'message_key': 'average_rssi',
     },
 }
 
