@@ -1,7 +1,28 @@
 Troubleshooting
 ===============
-If the Powersensor integration isn't showing all the expected values, here are
+
+If the Powersensor integration isn't showing as expected, here are
 some things to check.
+
+No Powersensor integration/devices are discovered
+-------------------------------------------------
+The Powersensor integration should automatically appear in the Discovered
+section on the Settings > Devices & services page. If it does not, this
+might mean the integration isn't installed in Home Assistant at all, in
+which case the installation steps should be reviewed. In particular, verify
+that the devices all have a sufficiently new firmware version.
+
+If the Powersensor integration is installed, double check that the Powersensor
+plug(s) are plugged in and switched on. If no plugs are switched on, Home
+Assistant won't be able to auto-discover that the Powersensor integration is
+available.
+
+The other likely explanation is that the Home Assistant runs on a different
+local network than what the Powersensor devices are on. If this is the case,
+Home Assistant is unlikely to be able to find and talk to the devices. Either
+the Powersensor devices or Home Assistant will need to be moved so they are
+on the same network.
+
 
 A sensor is not discovered
 --------------------------
