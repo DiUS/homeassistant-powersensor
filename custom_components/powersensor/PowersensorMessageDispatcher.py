@@ -140,7 +140,6 @@ class PowersensorMessageDispatcher:
         self._known_plugs.add(mac_address)
         self._known_plug_names[name] = mac_address
         known_evs = [
-            #'exception',
             'average_flow',
             'average_power',
             'average_power_components',
@@ -154,6 +153,7 @@ class PowersensorMessageDispatcher:
         for ev in known_evs:
             api.subscribe(ev, self.handle_message)
         api.subscribe('now_relaying_for', self.handle_relaying_for)
+        api.subscribe('exception', self.handle_exception)
         api.connect()
 
     def cancel_any_pending_removal(self, mac, source):
@@ -161,6 +161,9 @@ class PowersensorMessageDispatcher:
         if task:
             task.cancel()
             _LOGGER.debug(f"Cancelled pending removal for {mac} by {source}.")
+
+    async def handle_exception(self, event: str, exc: BaseException):
+        _LOGGER.error(f"Plug connection reported exception: {exc}")
 
     async def handle_relaying_for(self, event: str, message: dict):
         """Handle a potentially new sensor being reported."""
