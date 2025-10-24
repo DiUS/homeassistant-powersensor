@@ -204,7 +204,7 @@ class PowersensorMessageDispatcher:
 
         # Synthesise a role type message for the role diagnostic entity
         async_dispatcher_send(
-            self._hass, DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, role),
+            self._hass, DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, 'role'),
             'role', { 'role': role })
 
     async def disconnect(self):
