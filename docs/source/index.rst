@@ -14,6 +14,7 @@ various sensors that can be used for home automation and interfaces with other s
 
    installation
    data
+   troubleshooting
 
 
 Indices and tables
