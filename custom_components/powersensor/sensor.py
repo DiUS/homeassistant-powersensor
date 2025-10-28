@@ -17,13 +17,14 @@ from .PowersensorPlugEntity import PowersensorPlugEntity
 from .PowersensorSensorEntity import PowersensorSensorEntity
 from .SensorMeasurements import SensorMeasurements
 from .const import (CREATE_PLUG_SIGNAL,
-    CREATE_SENSOR_SIGNAL,
-    DATA_UPDATE_SIGNAL_FMT_MAC_EVENT,
-    HAVE_SOLAR_SENSOR_SIGNAL,
-    PLUG_ADDED_TO_HA_SIGNAL,
-    ROLE_UPDATE_SIGNAL,
-    SENSOR_ADDED_TO_HA_SIGNAL,
-)
+                    CREATE_SENSOR_SIGNAL,
+                    DATA_UPDATE_SIGNAL_FMT_MAC_EVENT,
+                    HAVE_SOLAR_SENSOR_SIGNAL,
+                    PLUG_ADDED_TO_HA_SIGNAL,
+                    ROLE_UPDATE_SIGNAL,
+                    SENSOR_ADDED_TO_HA_SIGNAL,
+                    HAVE_MAINS_SENSOR_SIGNAL,
+                    )
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,6 +80,11 @@ async def async_setup_entry(
             persist_entry = True
             async_dispatcher_send(hass, HAVE_SOLAR_SENSOR_SIGNAL)
 
+        if new_role == 'house-net':
+            new_data['with_mains'] = True  # Remember for next time we start
+            persist_entry = True
+            async_dispatcher_send(hass, HAVE_MAINS_SENSOR_SIGNAL)
+
         # TODO: for house-net/solar <-> we'd need to change the entities too
 
         if persist_entry:
@@ -117,6 +123,9 @@ async def async_setup_entry(
         if sensor_role == "solar":
             async_dispatcher_send(hass, HAVE_SOLAR_SENSOR_SIGNAL)
 
+        if sensor_role == "mains":
+            async_dispatcher_send(hass, HAVE_MAINS_SENSOR_SIGNAL)
+
     entry.async_on_unload(
         async_dispatcher_connect(
             hass, CREATE_SENSOR_SIGNAL, handle_discovered_sensor
@@ -130,10 +139,24 @@ async def async_setup_entry(
         await handle_discovered_sensor(mac, role)
 
     # Register the virtual household entities
-    household_entities = []
-    for measurement_type in ConsumptionMeasurements:
-        household_entities.append(PowersensorHouseholdEntity(vhh, measurement_type))
-    async_add_entities(household_entities)
+
+
+    async def add_mains_to_virtual_household():
+        _LOGGER.debug("Enabling mains components in virtual household")
+        household_entities = []
+        for measurement_type in ConsumptionMeasurements:
+            household_entities.append(PowersensorHouseholdEntity(vhh, measurement_type))
+        async_add_entities(household_entities)
+
+    with_mains = entry.data.get('with_mains', False)
+    if with_mains:
+        await add_mains_to_virtual_household()
+    else:
+        entry.async_on_unload(
+            async_dispatcher_connect(
+                hass, HAVE_MAINS_SENSOR_SIGNAL, add_mains_to_virtual_household
+            )
+        )
 
     async def add_solar_to_virtual_household():
         _LOGGER.debug("Enabling solar components in virtual household")
