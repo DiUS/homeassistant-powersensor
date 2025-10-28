@@ -8,7 +8,7 @@ root_dir="${this_dir}/.."
 
 cd "${root_dir}" || exit 1
 
-ref="$(git describe --always)"
+ref="$(git describe --tags)"
 manifest_ver=$(jq -r .version custom_components/powersensor/manifest.json)
 if [ "${ref}" != "v${manifest_ver}" ]
 then

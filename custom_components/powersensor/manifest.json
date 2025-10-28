@@ -16,8 +16,8 @@
     "powersensor-local==2.0.1"
   ],
   "single_config_entry": true,
-  "version": "0.0.0",
-    "zeroconf": [
+  "version": "0.1.0",
+  "zeroconf": [
     "_powersensor._udp.local."
   ]
 }
