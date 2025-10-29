@@ -1,6 +1,7 @@
 """Sensor platform for the integration."""
 from __future__ import annotations
 
+import asyncio
 import copy
 import logging
 
@@ -37,6 +38,9 @@ async def async_setup_entry(
     """Set up the Powersensor sensors."""
     vhh = entry.runtime_data["vhh"]
     dispatcher: PowersensorMessageDispatcher = entry.runtime_data['dispatcher']
+
+    entry.runtime_data['vhh_solar_create_lock'] = asyncio.Lock()
+    entry.runtime_data['vhh_solar_create_finished'] = False
 
 
     plug_role = "appliance"
@@ -163,12 +167,18 @@ async def async_setup_entry(
         )
 
     async def add_solar_to_virtual_household():
-        _LOGGER.debug("Enabling solar components in virtual household")
-        solar_household_entities = []
-        for solar_measurement_type in ProductionMeasurements:
-            solar_household_entities.append(PowersensorHouseholdEntity(vhh, solar_measurement_type))
+        async with entry.runtime_data['vhh_solar_create_lock']:
+            if entry.runtime_data['vhh_solar_create_finished']:
+                return
 
-        async_add_entities(solar_household_entities)
+            _LOGGER.debug("Enabling solar components in virtual household")
+            solar_household_entities = []
+            for solar_measurement_type in ProductionMeasurements:
+                solar_household_entities.append(PowersensorHouseholdEntity(vhh, solar_measurement_type))
+
+            async_add_entities(solar_household_entities)
+            entry.runtime_data['vhh_solar_create_finished'] = True
+
 
     with_solar = entry.data.get('with_solar', False)
     with_mains = entry.data.get('with_mains', False)
