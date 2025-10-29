@@ -24,6 +24,7 @@ async def main():
     mac = "mock0plug123"
     gateway_id = f"Powersensor-plug-{mac}-civet"
     plug = MockPlugUDPService(
+        mac=mac,
         gateway_id=gateway_id,
         port=49476,
         sensors=sensors,

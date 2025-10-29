@@ -3,44 +3,69 @@ import datetime
 import logging
 from abc import abstractmethod, ABC
 
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
 class MockSensor(ABC):
-    """Base class for mock sensors most methods are meant to be overridden"""
+    """Base class for mock sensors that generate realistic data streams"""
 
-    def __init__(self, mac: str, role: str | None=None,  update_interval: float = 30.0):
+    def __init__(self, mac: str, role: str | None=None,  update_interval: float = 5.0):
         self.mac = mac
         self.role = role
         self.update_interval = update_interval
+        self._last_raw_rssi = None
+        self._last_battery_microvolt = None
+        self._last_power = None
+        self._current_summation = None
 
     @abstractmethod
     def get_unit(self)->str:
         pass
 
     def get_raw_rssi(self):
-        return -95
+        self._last_raw_rssi = int(np.round(np.random.normal(-95.71486761710794, 1.659845729993101),0))
+        return self._last_raw_rssi
 
     def get_rssi(self):
-        return  -95.31663879935132
+        return  float(self._last_raw_rssi + np.random.normal(-0.016810085782794366, 1.5284142221819026))
 
     def summation_start(self):
         return 1761122290
 
     def battery_microvolt(self):
-        return 4057056
+        if self._last_battery_microvolt is None:
+            self._last_battery_microvolt = 4057056
+        sample = np.random.random()
+        if sample <= 0.008125:
+            self._last_battery_microvolt -= 8192
+        elif sample <= 0.203125:
+            self._last_battery_microvolt -= 4096
+        elif sample <= 0.796875:
+            pass
+        elif sample <= 0.991875:
+            self._last_battery_microvolt += 4096
+        else:
+            self._last_battery_microvolt += 8192
+        return self._last_battery_microvolt
 
     def duration(self):
-        return self.update_interval
+        return int(self.update_interval)
 
     def power(self):
-        return 728
+        if self._last_power is None:
+            self._last_power = 512
+        self._last_power += int(np.round(np.random.normal(0, 60),0))
+        return self._last_power
 
     def summation(self):
-        return 215449157
+        if self._current_summation is None:
+            self._current_summation = 683508996
+        self._current_summation += int(self.update_interval*self._last_power)
+        return self._current_summation
 
     def generate_reading(self) -> dict:
-        return {'starttime': datetime.datetime.now(datetime.timezone.utc).timestamp(),
+        return {'starttime': int( datetime.datetime.now(datetime.timezone.utc).timestamp()),
          'raw_rssi': self.get_raw_rssi(),
          'device': 'sensor',
          'rssi': self.get_rssi(),
