@@ -41,6 +41,8 @@ async def async_setup_entry(
 
     entry.runtime_data['vhh_solar_create_lock'] = asyncio.Lock()
     entry.runtime_data['vhh_solar_create_finished'] = False
+    entry.runtime_data['vhh_mains_create_lock'] = asyncio.Lock()
+    entry.runtime_data['vhh_mains_create_finished'] = False
 
 
     plug_role = "appliance"
@@ -150,11 +152,15 @@ async def async_setup_entry(
 
 
     async def add_mains_to_virtual_household():
-        _LOGGER.debug("Enabling mains components in virtual household")
-        household_entities = []
-        for measurement_type in ConsumptionMeasurements:
-            household_entities.append(PowersensorHouseholdEntity(vhh, measurement_type))
-        async_add_entities(household_entities)
+        async with entry.runtime_data['vhh_mains_create_lock']:
+            if entry.runtime_data['vhh_mains_create_finished']:
+                return
+            _LOGGER.debug("Enabling mains components in virtual household")
+            household_entities = []
+            for measurement_type in ConsumptionMeasurements:
+                household_entities.append(PowersensorHouseholdEntity(vhh, measurement_type))
+            async_add_entities(household_entities)
+            entry.runtime_data['vhh_mains_create_finished'] = True
 
     with_mains = entry.data.get('with_mains', False)
     if with_mains:
