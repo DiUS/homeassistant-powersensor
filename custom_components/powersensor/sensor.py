@@ -78,12 +78,15 @@ async def async_setup_entry(
         if new_role == 'solar':
             new_data['with_solar'] = True  # Remember for next time we start
             persist_entry = True
-            async_dispatcher_send(hass, HAVE_SOLAR_SENSOR_SIGNAL)
+            if new_data.get('with_mains', False):
+                async_dispatcher_send(hass, HAVE_SOLAR_SENSOR_SIGNAL)
 
         if new_role == 'house-net':
             new_data['with_mains'] = True  # Remember for next time we start
             persist_entry = True
             async_dispatcher_send(hass, HAVE_MAINS_SENSOR_SIGNAL)
+            if new_data.get('with_solar', False):
+                async_dispatcher_send(hass, HAVE_SOLAR_SENSOR_SIGNAL)
 
         # TODO: for house-net/solar <-> we'd need to change the entities too
 
@@ -119,8 +122,8 @@ async def async_setup_entry(
         ]
         async_add_entities(new_sensors, True)
         async_dispatcher_send(hass, SENSOR_ADDED_TO_HA_SIGNAL, sensor_mac, sensor_role)
-
-        if sensor_role == "solar":
+        mains_present = entry.data.get('with_mains', False)
+        if sensor_role == "solar" and mains_present:
             async_dispatcher_send(hass, HAVE_SOLAR_SENSOR_SIGNAL)
 
         if sensor_role == "mains":
@@ -167,7 +170,8 @@ async def async_setup_entry(
         async_add_entities(solar_household_entities)
 
     with_solar = entry.data.get('with_solar', False)
-    if with_solar:
+    with_mains = entry.data.get('with_mains', False)
+    if with_solar and with_mains:
         await add_solar_to_virtual_household()
     else:
         entry.async_on_unload(
