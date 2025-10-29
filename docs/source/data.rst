@@ -20,6 +20,7 @@ as well as the corresponding instantaneous power consumption/production.
 For installations lacking solar, the generation related entities will not
 be available.
 
+.. _vhh-net-issue:
 .. note::
 
   Powersensor deals with *net* readings, meaning that the energy import and
