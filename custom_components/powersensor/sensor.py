@@ -12,20 +12,25 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import PowersensorMessageDispatcher
 from .PlugMeasurements import PlugMeasurements
-from .PowersensorHouseholdEntity import HouseholdMeasurements, PowersensorHouseholdEntity, ConsumptionMeasurements, \
-    ProductionMeasurements
+from .PowersensorHouseholdEntity import (
+    HouseholdMeasurements,
+    PowersensorHouseholdEntity,
+    ConsumptionMeasurements,
+    ProductionMeasurements,
+)
 from .PowersensorPlugEntity import PowersensorPlugEntity
 from .PowersensorSensorEntity import PowersensorSensorEntity
 from .SensorMeasurements import SensorMeasurements
-from .const import (CREATE_PLUG_SIGNAL,
-                    CREATE_SENSOR_SIGNAL,
-                    DATA_UPDATE_SIGNAL_FMT_MAC_EVENT,
-                    HAVE_SOLAR_SENSOR_SIGNAL,
-                    PLUG_ADDED_TO_HA_SIGNAL,
-                    ROLE_UPDATE_SIGNAL,
-                    SENSOR_ADDED_TO_HA_SIGNAL,
-                    HAVE_MAINS_SENSOR_SIGNAL,
-                    )
+from .const import (
+    CREATE_PLUG_SIGNAL,
+    CREATE_SENSOR_SIGNAL,
+    DATA_UPDATE_SIGNAL_FMT_MAC_EVENT,
+    HAVE_SOLAR_SENSOR_SIGNAL,
+    PLUG_ADDED_TO_HA_SIGNAL,
+    ROLE_UPDATE_SIGNAL,
+    SENSOR_ADDED_TO_HA_SIGNAL,
+    HAVE_MAINS_SENSOR_SIGNAL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,7 +48,6 @@ async def async_setup_entry(
     entry.runtime_data['vhh_solar_create_finished'] = False
     entry.runtime_data['vhh_mains_create_lock'] = asyncio.Lock()
     entry.runtime_data['vhh_mains_create_finished'] = False
-
 
     plug_role = "appliance"
 
@@ -94,7 +98,7 @@ async def async_setup_entry(
             if new_data.get('with_solar', False):
                 async_dispatcher_send(hass, HAVE_SOLAR_SENSOR_SIGNAL)
 
-        # TODO: for house-net/solar <-> we'd need to change the entities too
+        # TODO: for house-net/solar/appliance <-> water we'd need to change the entities too
 
         if persist_entry:
             hass.config_entries.async_update_entry(entry, data=new_data)

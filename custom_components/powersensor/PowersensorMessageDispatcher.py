@@ -169,7 +169,7 @@ class PowersensorMessageDispatcher:
         """Handle a potentially new sensor being reported."""
         mac = message.get('mac', None)
         device_type = message.get('device_type', None)
-        if mac is None or  device_type != "sensor":
+        if mac is None or device_type != "sensor":
             _LOGGER.warning(f"Ignoring relayed device with MAC \"{mac}\" and type {device_type}")
             return
 
