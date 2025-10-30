@@ -91,10 +91,44 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
 
+    async def _common_setup(self):
+        if DOMAIN not in self.hass.data:
+            self.hass.data[DOMAIN] = {}
+
+        discovered_plugs_key = "discovered_plugs"
+        if discovered_plugs_key not in self.hass.data[DOMAIN]:
+            self.hass.data[DOMAIN][discovered_plugs_key] = {}
+
+        # register a unique id for the single power sensor entry
+        await self.async_set_unique_id(DOMAIN)
+
+        # abort now if configuration is on going in another thread (i.e. this thread isn't the first)
+        if self._async_current_entries() or self._async_in_progress():
+            _LOGGER.warning("Aborting - found existing entry!")
+            return self.async_abort(reason="already_configured")
+
+
+        display_name = f"⚡ Powersensor 🔌\n"
+        self.context.update({
+            "title_placeholders": {
+                "name": display_name
+            }
+        })
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle zeroconf discovery."""
+        await self._common_setup()
+        return await self.async_step_manual_confirm()
+
+
     async def async_step_zeroconf(
         self, discovery_info: zeroconf.ZeroconfServiceInfo
     ) -> ConfigFlowResult:
         """Handle zeroconf discovery."""
+        await self._common_setup()
+        discovered_plugs_key = "discovered_plugs"
         host = discovery_info.host
         port = discovery_info.port or DEFAULT_PORT
         display_name = _extract_device_name(discovery_info) or ""
@@ -106,41 +140,15 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         plug_data = {'host' : host,'port' :  port,  'display_name' : display_name,
                      'mac': mac, 'name': discovery_info.name}
 
-        if DOMAIN not in self.hass.data:
-            self.hass.data[DOMAIN] = {}
-
-        discovered_plugs_key = "discovered_plugs"
-        if discovered_plugs_key not in self.hass.data[DOMAIN]:
-            self.hass.data[DOMAIN][discovered_plugs_key] = {}
 
         if mac in self.hass.data[DOMAIN][discovered_plugs_key].keys():
             _LOGGER.debug("Mac found existing in data!")
         else:
             self.hass.data[DOMAIN][discovered_plugs_key][mac] = plug_data
 
-
-
-        # register a unique id for the single power sensor entry
-        await self.async_set_unique_id(DOMAIN)
-
-        # abort now if configuration is on going in another thread (i.e. this thread isn't the first)
-        if self._async_current_entries() or self._async_in_progress():
-            _LOGGER.warning("Aborting - found existing entry!")
-            return self.async_abort(reason="already_configured")
-
-        display_name = f"⚡ Powersensor 🔌\n"
-        self.context.update({
-            "title_placeholders": {
-                "name": display_name
-            }
-        })
         return await self.async_step_discovery_confirm()
 
-    async def async_step_discovery_confirm(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-
-        """Confirm discovery."""
+    async def async_step_confirm(self, step_id :str, user_input: dict[str, Any] | None = None):
         if user_input is not None:
             _LOGGER.debug(self.hass.data[DOMAIN]["discovered_plugs"])
             return self.async_create_entry(
@@ -151,4 +159,16 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     'roles': {},
                 }
             )
-        return self.async_show_form(step_id="discovery_confirm")
+        return self.async_show_form(step_id=step_id)
+
+    async def async_step_discovery_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        return await self.async_step_confirm(step_id="discovery_confirm", user_input=user_input)
+
+
+    async def async_step_manual_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+
+        return await self.async_step_confirm(step_id="manual_confirm", user_input=user_input)

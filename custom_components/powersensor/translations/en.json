@@ -6,6 +6,10 @@
         "description": "Do you want to add Powersensor to Home Assistant?",
         "title": "Powersensor plugs discovered"
       },
+      "manual_confirm": {
+        "description": "No Powersensor plugs were discovered on your network. You can still add the integration and if plugs are later discovered they will be added to Home Assistant. Do you want to add Powersensor to Home Assistant?",
+        "title": "No Powersensor plugs discovered"
+      },
       "reconfigure" : {
         "title" : "Update sensor roles",
         "description": "Note: Roles provided by sensors will override user settings"

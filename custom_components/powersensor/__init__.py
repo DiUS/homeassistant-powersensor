@@ -85,7 +85,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry.version == 1:
         # Move device info into subkey, add with_solar key
         devices = { **entry.data }
-        new_data = { 'devices': devices, 'with_solar': False, 'roles': {} }
+        new_data = { 'devices': devices, 'with_solar': False, 'with_mains': False, 'roles': {} }
         hass.config_entries.async_update_entry(entry, data=new_data, version=2, minor_version=1)
 
     _LOGGER.debug("Upgrading config to %s.%s", entry.version, entry.minor_version)
