@@ -2,8 +2,7 @@ Installation
 ============
 
 In its current form, the only supported installation method for the ``homeassistant-powersensor`` integration is
-manual. In the near future, we intend to support installation via `HACS <https://hacs.xyz/>`_
-however that is not yet possible.
+manual.
 
 Prerequisites
 --------------
