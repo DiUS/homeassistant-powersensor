@@ -9,7 +9,24 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.service_info import zeroconf
 from homeassistant.helpers.selector import selector
 
-from .const import DEFAULT_PORT, DOMAIN, ROLE_UPDATE_SIGNAL, SENSOR_NAME_FORMAT
+from .const import (
+    CFG_DEVICES,
+    CFG_ROLES,
+
+    DEFAULT_PORT,
+    DOMAIN,
+
+    ROLE_APPLIANCE,
+    ROLE_HOUSENET,
+    ROLE_SOLAR,
+    ROLE_WATER,
+
+    ROLE_UPDATE_SIGNAL,
+
+    RT_DISPATCHER,
+
+    SENSOR_NAME_FORMAT,
+)
 
 def _extract_device_name(discovery_info) -> str:
     """Extract a user-friendly device name from zeroconf info."""
@@ -53,7 +70,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_reconfigure(self, user_input: dict | None = None)->FlowResult:
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
-        dispatcher = entry.runtime_data["dispatcher"]
+        dispatcher = entry.runtime_data[RT_DISPATCHER]
 
         mac2name = { mac: SENSOR_NAME_FORMAT % mac for mac in dispatcher.sensors }
 
@@ -70,12 +87,13 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         sensor_roles = {}
         for sensor_mac in dispatcher.sensors:
-            role = entry.data.get('roles', {}).get(sensor_mac, unknown)
+            role = entry.data.get(CFG_ROLES, {}).get(sensor_mac, unknown)
             sel = selector({
                 "select": {
                     "options": [
                         # Note: these strings are NOT subject to translation
-                        "house-net", "solar", "water", "appliance", unknown
+                        ROLE_HOUSENET, ROLE_SOLAR, ROLE_WATER, ROLE_APPLIANCE,
+                        unknown
                     ],
                     "mode": "dropdown",
                 }
@@ -154,9 +172,8 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_create_entry(
                 title="Powersensor",
                 data={
-                    'devices': self.hass.data[DOMAIN]["discovered_plugs"],
-                    'with_solar': False,
-                    'roles': {},
+                    CFG_DEVICES: self.hass.data[DOMAIN]["discovered_plugs"],
+                    CFG_ROLES: {},
                 }
             )
         return self.async_show_form(step_id=step_id)
