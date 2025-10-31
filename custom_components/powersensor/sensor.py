@@ -133,12 +133,16 @@ async def async_setup_entry(
         ]
         async_add_entities(new_sensors, True)
         async_dispatcher_send(hass, SENSOR_ADDED_TO_HA_SIGNAL, sensor_mac, sensor_role)
-        mains_present = entry.data.get('with_mains', False)
-        if sensor_role == "solar" and mains_present:
+        with_mains = entry.data.get('with_mains', False)
+        with_solar = entry.data.get('with_solar', False)
+
+        if sensor_role == "solar" and with_mains:
             async_dispatcher_send(hass, HAVE_SOLAR_SENSOR_SIGNAL)
 
         if sensor_role == "house-net":
             async_dispatcher_send(hass, HAVE_MAINS_SENSOR_SIGNAL)
+            if with_solar:
+                async_dispatcher_send(hass, HAVE_SOLAR_SENSOR_SIGNAL)
 
     entry.async_on_unload(
         async_dispatcher_connect(
