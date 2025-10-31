@@ -69,7 +69,6 @@ The household energy doesn't match with the app
 This is a result of different architectural design decisions between
 Powersensor and Home Assistant. Please refer to :ref:`this note <vhh-net-issue>`.
 
-
 The household view doesn't show solar even though I have a solar kit
 --------------------------------------------------------------------
 There are a couple of likely explanations for this.
@@ -133,3 +132,19 @@ automatically visible on the dashboard. If they are of interest, go to
 Settings > Devices & services > Powersensor and select the plug. In the
 Sensor section, click on the current or voltage entity you wish to see, then
 the gear icon (⚙) and ensure both Enabled and Visible are toggled on.
+
+
+There appears to be missing data compared to the app
+----------------------------------------------------
+Sometimes the readings might show as "Unknown", and the household totals
+might be notably less than what's shown in the app. This will happen when
+a sensor is in "learning mode". Whenever a sensor has been installed or
+moved, it will take a while for the backend system to manage to (re)calibrate
+the sensor. During this time neither Home Assistant nor the Powersensor
+platform will be getting any usable data.
+
+Once the calibration has succeeded, the Powersensor platform will retroactively
+calculate the energy use during the calibration. However, on Home Assistant
+we do not have the ability to "back fill" like this, and the totals will end
+up lower than in the app. This is a known limitation, with no readily available
+fix.
