@@ -137,7 +137,7 @@ async def async_setup_entry(
         if sensor_role == "solar" and mains_present:
             async_dispatcher_send(hass, HAVE_SOLAR_SENSOR_SIGNAL)
 
-        if sensor_role == "mains":
+        if sensor_role == "house-net":
             async_dispatcher_send(hass, HAVE_MAINS_SENSOR_SIGNAL)
 
     entry.async_on_unload(
