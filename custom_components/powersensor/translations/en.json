@@ -1,6 +1,5 @@
 {
   "config": {
-    "title" : "Powersensor",
     "step": {
       "discovery_confirm": {
         "description": "Do you want to add Powersensor to Home Assistant?",
