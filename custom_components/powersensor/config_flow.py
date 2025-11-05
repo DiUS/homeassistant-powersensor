@@ -33,7 +33,8 @@ def _extract_device_name(discovery_info) -> str:
     properties = discovery_info.properties or {}
 
     if "id" in properties:
-        return f"🔌 Mac({properties["id"].strip()})"
+        dev_id = properties["id"].strip()
+        return f"🔌 Mac({dev_id})"
 
     # Fall back to cleaning up the service name
     name = discovery_info.name or ""
