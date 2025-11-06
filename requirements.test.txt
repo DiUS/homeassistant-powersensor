@@ -1,4 +1,6 @@
+asyncmock
+powersensor_local
 pytest
 pytest-asyncio
 pytest-homeassistant-custom-component
-asyncmock
+zeroconf

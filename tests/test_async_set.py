@@ -3,7 +3,7 @@ import pytest
 import pytest_asyncio
 from asyncmock import AsyncMock
 
-from AsyncSet import AsyncSet
+from custom_components.powersensor.AsyncSet import AsyncSet
 
 class MockLock:
   """Helper to count lock enter/exit calls.
