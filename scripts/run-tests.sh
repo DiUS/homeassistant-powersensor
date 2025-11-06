@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
-rootdir="$(dirname "$0")/.."
-export PYTHONPATH="${rootdir}/custom_components/powersensor"
+rootdir="$(realpath "$(dirname "$0")/..")"
+testsdir="${rootdir}/tests"
+cd "${rootdir}/custom_components/powersensor"
 export PYTHONDONTWRITEBYTECODE=1
-pytest "$(dirname "$0")/../tests"
+export PYTHONPATH=.
+export PYTEST_COVERAGE_DATA_FILE="${testsdir}/.coverage"
+pytest --cov=. --cov-config="${testsdir}/.coveragerc" --cache-clear "${testsdir}"

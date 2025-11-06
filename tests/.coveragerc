@@ -1,0 +1,7 @@
+[run]
+data_file = ${PYTEST_COVERAGE_DATA_FILE}
+omit =
+  # Exclude constants and enums
+  const.py
+  PlugMeasurements.py
+  SensorMeasurements.py
