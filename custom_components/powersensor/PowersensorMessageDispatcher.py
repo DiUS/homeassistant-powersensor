@@ -10,6 +10,10 @@ from powersensor_local import PlugApi, VirtualHousehold
 
 from custom_components.powersensor.AsyncSet import AsyncSet
 from custom_components.powersensor.const import (
+    # Used config entry fields
+    CFG_ROLES,
+
+    # Used signals
     CREATE_PLUG_SIGNAL,
     CREATE_SENSOR_SIGNAL,
     DATA_UPDATE_SIGNAL_FMT_MAC_EVENT,
@@ -173,7 +177,7 @@ class PowersensorMessageDispatcher:
             _LOGGER.warning(f"Ignoring relayed device with MAC \"{mac}\" and type {device_type}")
             return
 
-        persisted_role = self._entry.data.get('roles', {}).get(mac, None)
+        persisted_role = self._entry.data.get(CFG_ROLES, {}).get(mac, None)
         role = message.get('role', None)
         _LOGGER.debug(f"Relayed sensor {mac} with role {role} found")
 
@@ -187,7 +191,7 @@ class PowersensorMessageDispatcher:
 
     async def handle_message(self, event: str, message: dict):
         mac = message['mac']
-        persisted_role = self._entry.data.get('roles', {}).get(mac, None)
+        persisted_role = self._entry.data.get(CFG_ROLES, {}).get(mac, None)
         role = message.get('role', persisted_role)
         message['role'] = role
 
