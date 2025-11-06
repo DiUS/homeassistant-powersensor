@@ -28,36 +28,6 @@ from .const import (
     SENSOR_NAME_FORMAT,
 )
 
-def _extract_device_name(discovery_info) -> str:
-    """Extract a user-friendly device name from zeroconf info."""
-    properties = discovery_info.properties or {}
-
-    if "id" in properties:
-        dev_id = properties["id"].strip()
-        return f"🔌 Mac({dev_id})"
-
-    # Fall back to cleaning up the service name
-    name = discovery_info.name or ""
-
-    # Remove common suffixes
-    if name.endswith(".local."):
-        name = name[:-7]
-    if "._" in name:
-        name = name.split("._")[0]
-
-    # Replace common patterns
-    name = name.replace("-", " ")
-    name = name.replace("_", " ")
-
-    # Capitalize words
-    name = " ".join(word.capitalize() for word in name.split())
-
-    # If still not great, add a prefix
-    if not name or len(name) < 3:
-        name = f"Device at {discovery_info.host}"
-
-    return name
-
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -150,12 +120,14 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         discovered_plugs_key = "discovered_plugs"
         host = discovery_info.host
         port = discovery_info.port or DEFAULT_PORT
-        display_name = _extract_device_name(discovery_info) or ""
         properties = discovery_info.properties or {}
         mac = None
         if "id" in properties:
             mac = properties["id"].strip()
+        else:
+          return self.async_abort(reason="Plug firmware not compatible")
 
+        display_name = f"🔌 Mac({mac})"
         plug_data = {'host' : host,'port' :  port,  'display_name' : display_name,
                      'mac': mac, 'name': discovery_info.name}
 
