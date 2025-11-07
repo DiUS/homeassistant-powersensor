@@ -5,3 +5,7 @@ omit =
   const.py
   PlugMeasurements.py
   SensorMeasurements.py
+
+[report]
+exclude_also =
+  _LOGGER.debug

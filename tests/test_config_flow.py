@@ -1,9 +1,14 @@
 import pytest
-from asyncmock import AsyncMock
-from custom_components.powersensor.const import DOMAIN, SENSOR_NAME_FORMAT
 import custom_components.powersensor
+from asyncmock import AsyncMock
+from custom_components.powersensor.const import (
+  DOMAIN,
+  ROLE_UPDATE_SIGNAL,
+  SENSOR_NAME_FORMAT,
+)
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from ipaddress import ip_address
 
@@ -84,10 +89,14 @@ async def test_zeroconf_missing_id(hass):
   assert result["type"] == FlowResultType.ABORT
 
 
+import homeassistant.helpers.dispatcher as dispatcher
 async def test_reconfigure(hass, monkeypatch, def_config_entry):
+  # Make the config_flow use our precanned entry
   def my_entry(_):
     return def_config_entry
   monkeypatch.setattr(hass.config_entries, "async_get_entry", my_entry)
+
+  # Kick off the reconfigure
   result = await hass.config_entries.flow.async_init(
     DOMAIN,
     context={
@@ -97,9 +106,22 @@ async def test_reconfigure(hass, monkeypatch, def_config_entry):
   )
   assert result["type"] == FlowResultType.FORM
 
+  # Hook into role updates to see role change come through
+  called = 0
+  async def verify_roles(mac, role):
+    nonlocal called
+    called += 1
+    assert (mac == 'cafebabe' and role == 'water')
+
+  discon = async_dispatcher_connect(hass, ROLE_UPDATE_SIGNAL, verify_roles)
+
+  # Prepare user_input, and submit it
   mac2name = { mac: SENSOR_NAME_FORMAT % mac for mac in def_config_entry.runtime_data['dispatcher'].sensors }
   result = await hass.config_entries.flow.async_configure(
     result["flow_id"],
     user_input={ mac2name['cafebabe']: 'water' }
   )
+  discon()
+  # Verify
   assert result["type"] == FlowResultType.ABORT
+  assert called == 1
