@@ -26,6 +26,8 @@ from custom_components.powersensor.const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
 class PowersensorMessageDispatcher:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, vhh: VirtualHousehold, debounce_timeout: float = 60):
         self._hass = hass
@@ -39,7 +41,7 @@ class PowersensorMessageDispatcher:
         self._pending_removals = {}
         self._debounce_seconds = debounce_timeout
         self.has_solar = False
-        self._solar_request_limit = datetime.timedelta(seconds = 10)
+        self._solar_request_limit = datetime.timedelta(seconds=10)
         self._unsubscribe_from_signals = [
             async_dispatcher_connect(self._hass,
                                      ZEROCONF_ADD_PLUG_SIGNAL,
@@ -73,10 +75,11 @@ class PowersensorMessageDispatcher:
         self._safe_to_process_plug_queue = True
         if self._monitor_add_plug_queue is None or self._monitor_add_plug_queue.done():
             self._stop_task = False
-            self._monitor_add_plug_queue = self._hass.async_create_background_task(self._monitor_plug_queue(), name="plug_queue_monitor")
+            self._monitor_add_plug_queue = self._hass.async_create_background_task(self._monitor_plug_queue(),
+                                                                                   name="plug_queue_monitor")
             _LOGGER.debug("Background task started")
 
-    def _plug_has_been_seen(self, mac_address, name)->bool:
+    def _plug_has_been_seen(self, mac_address, name) -> bool:
         return mac_address in self.plugs or mac_address in self._known_plugs or name in self._known_plug_names
 
     async def _monitor_plug_queue(self):
@@ -91,13 +94,12 @@ class PowersensorMessageDispatcher:
                                               mac_address, host, port, name)
                     elif mac_address in self._known_plugs and not mac_address in self.plugs:
                         _LOGGER.info(f"Plug with mac {mac_address} is known, but API is missing."
-                                        f"Reconnecting without requesting entity creation...")
-                        self._create_api(mac_address,host, port, name)
+                                     f"Reconnecting without requesting entity creation...")
+                        self._create_api(mac_address, host, port, name)
                     else:
                         _LOGGER.debug(f"Plug: {mac_address} has already been created as an entity in Home Assistant."
                                       f" Skipping and flushing from queue.")
                         await self._plug_added_queue.remove((mac_address, host, port, name))
-
 
                 await asyncio.sleep(5)
             _LOGGER.debug("Plug queue has been processed!")
@@ -122,20 +124,19 @@ class PowersensorMessageDispatcher:
             _LOGGER.debug("Background task stopped")
             self._monitor_add_plug_queue = None
 
-
     async def stop_pending_removal_tasks(self):
         """Stop the background removal tasks."""
-        for k in range(len(self._pending_removals)):
-            if self._pending_removals[k] and not self._pending_removals[k].done():
-                self._pending_removals[k].cancel()
+        # create a temporary copy to avoid concurrency problems
+        task_list = [task for task in self._pending_removals.values()]
+        for task in task_list:
+            if task and not task.done():
+                task.cancel()
                 try:
-                    await self._pending_removals[k]
+                    await task
                 except asyncio.CancelledError:
                     pass
                 _LOGGER.debug("Background removal task stopped")
-                self._pending_removals[k] = None
-        self._pending_removals = []
-
+        self._pending_removals = {}
 
     def _create_api(self, mac_address, ip, port, name):
         _LOGGER.info(f"Creating API for mac={mac_address}, ip={ip}, port={port}")
@@ -160,10 +161,14 @@ class PowersensorMessageDispatcher:
         api.subscribe('exception', self.handle_exception)
         api.connect()
 
-    def cancel_any_pending_removal(self, mac, source):
+    async def cancel_any_pending_removal(self, mac, source):
         task = self._pending_removals.pop(mac, None)
         if task:
             task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
             _LOGGER.debug(f"Cancelled pending removal for {mac} by {source}.")
 
     async def handle_exception(self, event: str, exc: BaseException):
@@ -198,7 +203,7 @@ class PowersensorMessageDispatcher:
         if role != persisted_role:
             async_dispatcher_send(self._hass, ROLE_UPDATE_SIGNAL, mac, role)
 
-        self.cancel_any_pending_removal(mac, "new message received from plug")
+        await self.cancel_any_pending_removal(mac, "new message received from plug")
 
         # Feed the household calculations
         if event == 'average_power':
@@ -207,12 +212,12 @@ class PowersensorMessageDispatcher:
             await self._vhh.process_summation_event(message)
 
         async_dispatcher_send(self._hass,
-              DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, event), event, message)
+                              DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, event), event, message)
 
         # Synthesise a role type message for the role diagnostic entity
         async_dispatcher_send(
             self._hass, DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, 'role'),
-            'role', { 'role': role })
+            'role', {'role': role})
 
     async def disconnect(self):
         for _ in range(len(self.plugs)):
@@ -226,7 +231,7 @@ class PowersensorMessageDispatcher:
         await self.stop_pending_removal_tasks()
 
     @callback
-    def _acknowledge_sensor_added_to_homeassistant(self,mac, role):
+    def _acknowledge_sensor_added_to_homeassistant(self, mac, role):
         self.sensors[mac] = role
 
     @callback
@@ -239,7 +244,7 @@ class PowersensorMessageDispatcher:
         network_info = dict()
         mac = info['properties'][b'id'].decode('utf-8')
         network_info['mac'] = mac
-        self.cancel_any_pending_removal(mac, "request to add plug")
+        await self.cancel_any_pending_removal(mac, "request to add plug")
         network_info['host'] = info['addresses'][0]
         network_info['port'] = info['port']
         network_info['name'] = info['name']
@@ -253,7 +258,7 @@ class PowersensorMessageDispatcher:
     async def _plug_updated(self, info):
         _LOGGER.debug(f" Request to update plug received: {info}")
         mac = info['properties'][b'id'].decode('utf-8')
-        self.cancel_any_pending_removal(mac, "request to update plug")
+        await self.cancel_any_pending_removal(mac, "request to update plug")
         host = info['addresses'][0]
         port = info['port']
         name = info['name']
@@ -262,7 +267,7 @@ class PowersensorMessageDispatcher:
             current_api: PlugApi = self.plugs[mac]
             if current_api._listener._ip == host and current_api._listener._port == port:
                 _LOGGER.debug(f"Request to update plug with mac {mac} does not alter ip from existing API."
-                             f"IP still {host} and port is {port}. Skipping update...")
+                              f"IP still {host} and port is {port}. Skipping update...")
                 return
             await current_api.disconnect()
 
@@ -277,7 +282,6 @@ class PowersensorMessageDispatcher:
             await self.enqueue_plug_for_adding(network_info)
             await self.process_plug_queue()
 
-
     async def _schedule_plug_removal(self, name, info):
         _LOGGER.debug(f" Request to delete plug received: {info}")
         if name in self._known_plug_names:
@@ -289,8 +293,8 @@ class PowersensorMessageDispatcher:
 
                 _LOGGER.debug(f"Scheduling removal for {name}")
                 self._pending_removals[mac] = self._hass.async_create_background_task(
-                    self._delayed_plug_remove(name,mac),
-                    name = f"Removal-Task-For-{name}"
+                    self._delayed_plug_remove(name, mac),
+                    name=f"Removal-Task-For-{name}"
                 )
         else:
             _LOGGER.warning(f"Received request to delete api for gateway with name [{name}], but this name"
@@ -312,4 +316,3 @@ class PowersensorMessageDispatcher:
         finally:
             # Either way were done with this task
             self._pending_removals.pop(mac, None)
-
