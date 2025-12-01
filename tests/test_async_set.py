@@ -1,7 +1,5 @@
-import asyncio
 import pytest
 import pytest_asyncio
-from asyncmock import AsyncMock
 
 from custom_components.powersensor.AsyncSet import AsyncSet
 

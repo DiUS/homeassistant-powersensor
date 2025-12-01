@@ -1,7 +1,8 @@
 import asyncio
 from typing import Optional
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.loader import bind_hass
 from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 import homeassistant.components.zeroconf
@@ -34,7 +35,7 @@ class PowersensorServiceListener(ServiceListener):
             )
 
     async def _async_service_add(self, *args):
-        async_dispatcher_send(self._hass, ZEROCONF_ADD_PLUG_SIGNAL, *args)
+        self.dispatch(ZEROCONF_ADD_PLUG_SIGNAL, *args)
 
 
     async def _async_delayed_remove(self, name):
@@ -72,7 +73,7 @@ class PowersensorServiceListener(ServiceListener):
         )
 
     async def _async_service_remove(self, *args):
-        async_dispatcher_send(self._hass, ZEROCONF_REMOVE_PLUG_SIGNAL, *args)
+        self.dispatch( ZEROCONF_REMOVE_PLUG_SIGNAL, *args)
 
     def update_service(self, zc, type_, name):
         self.cancel_any_pending_removal(name, "request to update")
@@ -85,7 +86,7 @@ class PowersensorServiceListener(ServiceListener):
 
     async def _async_service_update(self, *args):
         # remove from pending tasks if update received
-        async_dispatcher_send(self._hass, ZEROCONF_UPDATE_PLUG_SIGNAL, *args)
+        self.dispatch( ZEROCONF_UPDATE_PLUG_SIGNAL, *args)
 
     async def _async_get_service_info(self, zc, type_, name):
         try:
@@ -113,6 +114,11 @@ class PowersensorServiceListener(ServiceListener):
         if task:
             task.cancel()
             _LOGGER.info(f"Cancelled pending removal for {name} by {source}.")
+
+    @callback
+    @bind_hass
+    def dispatch(self,signal_name, *args ):
+        async_dispatcher_send(self._hass, signal_name, *args)
 
 class PowersensorDiscoveryService:
     def __init__(self, hass: HomeAssistant, service_type: str = "_powersensor._tcp.local."):

@@ -46,7 +46,7 @@ def def_config_entry():
         }
       },
       'with_solar': False,
-      'roles': { 'c001eat5': 'house-net', 'cafebabe': 'solar' },
+      'roles': { 'c001eat5': 'house-net', 'cafebabe': 'solar' ,'d3adB33f': '<unknown>'},
     },
     entry_id="test",
     version=PowersensorConfigFlow.VERSION,
@@ -54,6 +54,6 @@ def def_config_entry():
     state=ConfigEntryState.LOADED,
   )
   class MockDispatcher:
-    sensors = [ 'coo1eat5', 'cafebabe' ]
+    sensors = [ 'coo1eat5', 'cafebabe','d3adB33f' ]
   entry.runtime_data={ 'dispatcher': MockDispatcher() }
   return entry
