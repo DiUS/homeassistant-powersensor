@@ -109,19 +109,29 @@ async def async_setup_entry(
     #
     async def handle_discovered_sensor(sensor_mac: str, sensor_role: str):
         """Registers sensor entities, signals sensor added plus VHH update if needed."""
-        new_sensors = [
-            PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.Battery),
-            PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.WATTS),
-            PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.SUMMATION_ENERGY),
-            PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.ROLE),
-            PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.RSSI),
-        ]
-        async_add_entities(new_sensors, True)
-        async_dispatcher_send(hass, SENSOR_ADDED_TO_HA_SIGNAL, sensor_mac, sensor_role)
+        if sensor_role == 'water':
+            new_sensors = [
+                PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.Battery),
+                PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.LITERS_PER_MINUTE),
+                PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.LITERS),
+                PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.ROLE),
+                PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.RSSI),
+            ]
+            async_add_entities(new_sensors, True)
+        else:
+            new_sensors = [
+                PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.Battery),
+                PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.WATTS),
+                PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.SUMMATION_ENERGY),
+                PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.ROLE),
+                PowersensorSensorEntity(hass, sensor_mac, sensor_role, SensorMeasurements.RSSI),
+            ]
+            async_add_entities(new_sensors, True)
+            async_dispatcher_send(hass, SENSOR_ADDED_TO_HA_SIGNAL, sensor_mac, sensor_role)
 
-        if (sensor_role == ROLE_SOLAR and with_mains()) or \
-            sensor_role == ROLE_HOUSENET:
-            async_dispatcher_send(hass, UPDATE_VHH_SIGNAL)
+            if (sensor_role == ROLE_SOLAR and with_mains()) or \
+                sensor_role == ROLE_HOUSENET:
+                async_dispatcher_send(hass, UPDATE_VHH_SIGNAL)
 
 
     entry.async_on_unload(

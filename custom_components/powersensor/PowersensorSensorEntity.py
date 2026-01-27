@@ -1,5 +1,5 @@
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.const import EntityCategory, UnitOfPower, UnitOfEnergy, PERCENTAGE, SIGNAL_STRENGTH_DECIBELS
+from homeassistant.const import EntityCategory, UnitOfPower, UnitOfEnergy, PERCENTAGE, SIGNAL_STRENGTH_DECIBELS, UnitOfVolume, UnitOfVolumeFlowRate
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 
@@ -55,6 +55,25 @@ _config = {
         'category': EntityCategory.DIAGNOSTIC,
         'event': 'radio_signal_quality',
         'message_key': 'average_rssi',
+    },
+    SensorMeasurements.LITERS_PER_MINUTE: {
+        "name": "Water Flow Rate",
+        "device_class": SensorDeviceClass.WATER,
+        "unit": UnitOfVolumeFlowRate.LITERS_PER_MINUTE,
+        "precision": 1,
+        'event': 'average_flow',
+        'message_key': 'litres_per_minute',
+        'callback': lambda v: v*10.0
+    },
+    SensorMeasurements.LITERS: {
+        "name": "Total Water Consumption",
+        "device_class": SensorDeviceClass.WATER,
+        "unit": UnitOfVolume.LITERS,
+        "precision": 2,
+        "state_class": SensorStateClass.TOTAL,
+        'event': 'summation_volume',
+        'message_key': 'summation_litres',
+        'callback': lambda v: v / 10.0 - 19098.0
     },
 }
 

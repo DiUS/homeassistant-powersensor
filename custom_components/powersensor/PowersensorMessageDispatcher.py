@@ -201,6 +201,9 @@ class PowersensorMessageDispatcher:
         if role is not None:
             if role.lower() == 'unknown' or role.lower() == '<unknown>':
                 role = None
+        if role is None:
+            if 'average_flow' in message or 'summation_litres' in message:
+                role = 'water'
         message['role'] = role
 
         if role != persisted_role:
