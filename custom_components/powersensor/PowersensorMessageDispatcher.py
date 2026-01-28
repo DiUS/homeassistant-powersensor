@@ -198,6 +198,9 @@ class PowersensorMessageDispatcher:
         mac = message['mac']
         persisted_role = self._entry.data.get(CFG_ROLES, {}).get(mac, None)
         role = message.get('role', persisted_role)
+        if role is None or role == 'unknown' or role == '<unknown>':
+            if persisted_role is not None or persisted_role != 'unknown' or persisted_role != '<unknown>':
+                role = persisted_role
         message['role'] = role
 
         if role != persisted_role:
