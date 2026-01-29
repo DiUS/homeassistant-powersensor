@@ -81,7 +81,7 @@ async def async_setup_entry(
         """Persists role updates and signals for VHH update if needed."""
         # We only persist actual roles. If a device forgets its role, we want
         # to keep what we've previously learned.
-        if new_role is not None and new_role != 'unknown' and new_role != '<unknown>':
+        if new_role is not None:
             new_data = copy.deepcopy({ **entry.data })
             if CFG_ROLES not in new_data.keys():
                 new_data[CFG_ROLES] = {}

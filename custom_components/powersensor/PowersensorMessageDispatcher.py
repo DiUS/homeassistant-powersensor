@@ -26,7 +26,7 @@ from custom_components.powersensor.const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
+UNKNOWN = "unknown"
 
 class PowersensorMessageDispatcher:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, vhh: VirtualHousehold, debounce_timeout: float = 60):
@@ -184,13 +184,15 @@ class PowersensorMessageDispatcher:
 
         persisted_role = self._entry.data.get(CFG_ROLES, {}).get(mac, None)
         role = message.get('role', None)
+        if role == UNKNOWN:
+          role = None
         _LOGGER.debug(f"Relayed sensor {mac} with role {role} found")
 
         if mac not in self.sensors:
             _LOGGER.debug(f"Reporting new sensor {mac} with role {role}")
             self.on_start_sensor_queue[mac] = role
             async_dispatcher_send(self._hass, CREATE_SENSOR_SIGNAL, mac, role)
-        if role != persisted_role:
+        if persisted_role is not None and role != persisted_role:
             _LOGGER.debug(f"Restoring role for {mac} from {role} to {persisted_role}")
             async_dispatcher_send(self._hass, ROLE_UPDATE_SIGNAL, mac, persisted_role)
 
@@ -198,10 +200,7 @@ class PowersensorMessageDispatcher:
         mac = message['mac']
         persisted_role = self._entry.data.get(CFG_ROLES, {}).get(mac, None)
         role = message.get('role', persisted_role)
-        if role is None or role == 'unknown' or role == '<unknown>':
-            if persisted_role is not None or persisted_role != 'unknown' or persisted_role != '<unknown>':
-                role = persisted_role
-        message['role'] = role
+        message['role'] = persisted_role if role == UNKNOWN else role
 
         if role != persisted_role:
             async_dispatcher_send(self._hass, ROLE_UPDATE_SIGNAL, mac, role)
