@@ -28,6 +28,9 @@ from custom_components.powersensor.const import (
 _LOGGER = logging.getLogger(__name__)
 UNKNOWN = "unknown"
 
+def _filter_unknown(role):
+    return None if role == UNKNOWN else role
+
 class PowersensorMessageDispatcher:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, vhh: VirtualHousehold, debounce_timeout: float = 60):
         self._hass = hass
@@ -112,6 +115,15 @@ class PowersensorMessageDispatcher:
         finally:
             self._monitor_add_plug_queue = None
 
+    def _get_role_info(self, message):
+        """Retrieve the effective role and persisted role for this message."""
+        # Filter in case older version stuck an "unknown" in there
+        persisted_role = _filter_unknown(
+            self._entry.data.get(CFG_ROLES, {}).get(message['mac'], None))
+        # The sensor *does* send "unknown", not null/None, so filter it
+        role = _filter_unknown(message.get('role', None))
+        return role, persisted_role
+
     async def stop_processing_plug_queue(self):
         """Stop the background task."""
         self._stop_task = True
@@ -182,27 +194,32 @@ class PowersensorMessageDispatcher:
             _LOGGER.warning(f"Ignoring relayed device with MAC \"{mac}\" and type {device_type}")
             return
 
-        persisted_role = self._entry.data.get(CFG_ROLES, {}).get(mac, None)
-        role = message.get('role', None)
-        if role == UNKNOWN:
-          role = None
+        role, persisted_role = self._get_role_info(message)
         _LOGGER.debug(f"Relayed sensor {mac} with role {role} found")
 
         if mac not in self.sensors:
             _LOGGER.debug(f"Reporting new sensor {mac} with role {role}")
             self.on_start_sensor_queue[mac] = role
             async_dispatcher_send(self._hass, CREATE_SENSOR_SIGNAL, mac, role)
+
+        # We only apply a known persisted role, so we don't clobber a sensor's
+        # actual knowledge.
         if persisted_role is not None and role != persisted_role:
             _LOGGER.debug(f"Restoring role for {mac} from {role} to {persisted_role}")
             async_dispatcher_send(self._hass, ROLE_UPDATE_SIGNAL, mac, persisted_role)
 
     async def handle_message(self, event: str, message: dict):
         mac = message['mac']
-        persisted_role = self._entry.data.get(CFG_ROLES, {}).get(mac, None)
-        role = message.get('role', persisted_role)
-        message['role'] = persisted_role if role == UNKNOWN else role
 
-        if role != persisted_role:
+        role, persisted_role = self._get_role_info(message)
+
+        # Apply persisted role information if necessary
+        message['role'] = persisted_role if role is None else role
+
+        # Uknown roles from the sensor should not be allowed to overwrite
+        # any persisted roles
+        if role is not None and role != persisted_role:
+            self.sensors[mac] = role
             async_dispatcher_send(self._hass, ROLE_UPDATE_SIGNAL, mac, role)
 
         await self.cancel_any_pending_removal(mac, "new message received from plug")
