@@ -8,7 +8,7 @@ from homeassistant.const import UnitOfPower, UnitOfEnergy
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.typing import StateType
 
-from powersensor_local import VirtualHousehold
+from powersensor_local import VirtualHousehold # type: ignore[import-untyped]
 
 from ..const import DOMAIN
 
