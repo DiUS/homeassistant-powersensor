@@ -12,4 +12,6 @@ pytest \
   --cov-config="${testsdir}/.coveragerc" \
   --cov-report term-missing \
   --cache-clear \
-  "${testsdir}"
+  --capture=no \
+  "${testsdir}" \
+  "$@"

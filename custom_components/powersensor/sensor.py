@@ -79,18 +79,15 @@ async def async_setup_entry(
     #
     async def handle_role_update(mac_address: str, new_role: str):
         """Persists role updates and signals for VHH update if needed."""
-        # We only persist actual roles. If a device forgets its role, we want
-        # to keep what we've previously learned.
-        if new_role is not None:
-            new_data = copy.deepcopy({ **entry.data })
-            if CFG_ROLES not in new_data.keys():
-                new_data[CFG_ROLES] = {}
-            roles = new_data[CFG_ROLES]
-            old_role = roles.get(mac_address, None)
-            if old_role is None or old_role != new_role:
-                _LOGGER.debug(f"Updating role for {mac_address} from {old_role} to {new_role}")
-                roles[mac_address] = new_role
-                hass.config_entries.async_update_entry(entry, data=new_data)
+        new_data = copy.deepcopy({ **entry.data })
+        if CFG_ROLES not in new_data.keys():
+            new_data[CFG_ROLES] = {}
+        roles = new_data[CFG_ROLES]
+        old_role = roles.get(mac_address, None)
+        if old_role is None or old_role != new_role:
+            _LOGGER.debug(f"Updating role for {mac_address} from {old_role} to {new_role}")
+            roles[mac_address] = new_role
+            hass.config_entries.async_update_entry(entry, data=new_data)
 
         # TODO: for house-net/solar/appliance <-> water we'd need to change the entities too
 

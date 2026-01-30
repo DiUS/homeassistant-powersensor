@@ -22,4 +22,4 @@ jobs:
           ./scripts/prepare-tests.sh
       - name: "Run tests"
         run: |
-          ./scripts/run-tests.sh
+          ./scripts/run-tests.sh --cov-fail-under=100

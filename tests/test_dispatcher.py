@@ -5,8 +5,13 @@ from ipaddress import ip_address
 import pytest
 
 
-from custom_components.powersensor.const import CREATE_PLUG_SIGNAL, CREATE_SENSOR_SIGNAL, ROLE_UPDATE_SIGNAL, \
+from custom_components.powersensor.const import (
+    CFG_ROLES,
+    CREATE_PLUG_SIGNAL,
+    CREATE_SENSOR_SIGNAL,
+    ROLE_UPDATE_SIGNAL,
     DATA_UPDATE_SIGNAL_FMT_MAC_EVENT
+)
 
 MAC="a4cf1218f158"
 from unittest.mock import Mock, call
@@ -27,6 +32,7 @@ def monkey_patched_dispatcher(hass, monkeypatch):
     monkeypatch.setattr(powersensor_dispatcher_module, "async_dispatcher_send", async_dispatcher_send)
     vhh = powersensor_dispatcher_module.VirtualHousehold(False)
     entry = Mock()
+    entry.data = {CFG_ROLES: {}}
     dispatcher = powersensor_dispatcher_module.PowersensorMessageDispatcher(hass, entry, vhh,debounce_timeout =2)
     if not hasattr(dispatcher, 'dispatch_send_reference'):
         object.__setattr__(dispatcher, 'dispatch_send_reference', {})
@@ -195,7 +201,6 @@ async def test_dispatcher_removal(monkeypatch, monkey_patched_dispatcher, networ
     # the removal should not have happened if it was interrupted
     assert MAC in dispatcher.plugs.keys()
 
-
 @pytest.mark.asyncio
 async def test_dispatcher_handle_relaying_for(monkeypatch, monkey_patched_dispatcher):
     dispatcher=monkey_patched_dispatcher
@@ -206,9 +211,31 @@ async def test_dispatcher_handle_relaying_for(monkeypatch, monkey_patched_dispat
     await dispatcher.handle_relaying_for("test-event", {'mac': MAC, 'device_type': 'plug'})
     assert dispatcher.dispatch_send_reference.call_count == 0
     await dispatcher.handle_relaying_for("test-event", {'mac': MAC, 'device_type': 'sensor', 'role': 'house-net'})
+    assert dispatcher.dispatch_send_reference.call_count == 1
+    assert dispatcher.dispatch_send_reference.call_args_list[0] == call(dispatcher._hass, CREATE_SENSOR_SIGNAL, MAC, 'house-net')
+
+@pytest.mark.asyncio
+async def test_dispatcher_handle_relaying_for_none_role(monkeypatch, monkey_patched_dispatcher):
+    dispatcher = monkey_patched_dispatcher
+    await dispatcher.handle_relaying_for("test-event", {'mac': MAC, 'device_type': 'sensor', 'role': None})
+    assert dispatcher.dispatch_send_reference.call_count == 1
+    assert dispatcher.dispatch_send_reference.call_args_list[0] == call(dispatcher._hass, CREATE_SENSOR_SIGNAL, MAC, None)
+
+@pytest.mark.asyncio
+async def test_dispatcher_handle_relaying_for_unknown_role(monkeypatch, monkey_patched_dispatcher):
+    dispatcher = monkey_patched_dispatcher
+    await dispatcher.handle_relaying_for("test-event", {'mac': MAC, 'device_type': 'sensor', 'role': 'unknown'})
+    assert dispatcher.dispatch_send_reference.call_count == 1
+    assert dispatcher.dispatch_send_reference.call_args_list[0] == call(dispatcher._hass, CREATE_SENSOR_SIGNAL, MAC, None)
+
+@pytest.mark.asyncio
+async def test_dispatcher_handle_relaying_for_unknown_role_with_stored_role(monkeypatch, monkey_patched_dispatcher):
+    dispatcher = monkey_patched_dispatcher
+    dispatcher._entry.data[CFG_ROLES][MAC] = 'house-net'
+    await dispatcher.handle_relaying_for("test-event", {'mac': MAC, 'device_type': 'sensor', 'role': 'unknown'})
     assert dispatcher.dispatch_send_reference.call_count == 2
-    dispatcher.dispatch_send_reference.call_args_list[0] = call(dispatcher._hass, CREATE_SENSOR_SIGNAL, MAC, 'house-net')
-    dispatcher.dispatch_send_reference.call_args_list[1] = call(dispatcher._hass, ROLE_UPDATE_SIGNAL, MAC, 'house-net')
+    assert dispatcher.dispatch_send_reference.call_args_list[0] == call(dispatcher._hass, CREATE_SENSOR_SIGNAL, MAC, None)
+    assert dispatcher.dispatch_send_reference.call_args_list[1] == call(dispatcher._hass, ROLE_UPDATE_SIGNAL, MAC, 'house-net')
 
 @pytest.mark.asyncio
 async def test_dispatcher_handle_message(monkeypatch, monkey_patched_dispatcher):
@@ -218,21 +245,21 @@ async def test_dispatcher_handle_message(monkeypatch, monkey_patched_dispatcher)
     message = {'mac': MAC, 'device_type': 'sensor', 'role': role}
     await dispatcher.handle_message(event, message)
     assert dispatcher.dispatch_send_reference.call_count ==3
-    dispatcher.dispatch_send_reference.call_args_list[0] = call(dispatcher._hass, ROLE_UPDATE_SIGNAL, MAC, role)
-    dispatcher.dispatch_send_reference.call_args_list[1] = call(dispatcher._hass,
+    assert dispatcher.dispatch_send_reference.call_args_list[0] == call(dispatcher._hass, ROLE_UPDATE_SIGNAL, MAC, role)
+    assert dispatcher.dispatch_send_reference.call_args_list[1] == call(dispatcher._hass,
                                                                 DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (MAC, event),
                                                                 event, message)
-    dispatcher.dispatch_send_reference.call_args_list[2] = call(dispatcher._hass,
+    assert dispatcher.dispatch_send_reference.call_args_list[2] == call(dispatcher._hass,
                                                                 DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (MAC, 'role'),
                                                                 'role', {'role': role})
     event = "summation_energy"
     await dispatcher.handle_message(event, message)
     assert dispatcher.dispatch_send_reference.call_count == 6
-    dispatcher.dispatch_send_reference.call_args_list[3] = call(dispatcher._hass, ROLE_UPDATE_SIGNAL, MAC, role)
-    dispatcher.dispatch_send_reference.call_args_list[4] = call(dispatcher._hass,
+    assert dispatcher.dispatch_send_reference.call_args_list[3] == call(dispatcher._hass, ROLE_UPDATE_SIGNAL, MAC, role)
+    assert dispatcher.dispatch_send_reference.call_args_list[4] == call(dispatcher._hass,
                                                                 DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (MAC, event),
                                                                 event, message)
-    dispatcher.dispatch_send_reference.call_args_list[5] = call(dispatcher._hass,
+    assert dispatcher.dispatch_send_reference.call_args_list[5] == call(dispatcher._hass,
                                                                 DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (MAC, 'role'),
                                                                 'role', {'role': role})
 
