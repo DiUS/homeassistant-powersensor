@@ -30,12 +30,12 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 @pytest.fixture
 def hass_data(hass: HomeAssistant):
     """Fixture to provide mock data for the Home Assistant environment."""
-    hass.data = {
+    hass.data.update({
         DATA_COMPONENTS: {},
         DATA_INTEGRATIONS: {},
         DATA_MISSING_PLATFORMS: {},
         DATA_PRELOAD_PLATFORMS: [],
-    }
+    })
 
 
 ### Tests ###############################################
