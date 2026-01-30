@@ -10,7 +10,7 @@ from homeassistant.helpers.typing import StateType
 
 from powersensor_local import VirtualHousehold
 
-from .const import DOMAIN
+from ..const import DOMAIN
 
 class HouseholdMeasurements(Enum):
     POWER_HOME_USE = 1

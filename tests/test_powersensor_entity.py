@@ -4,10 +4,10 @@ from unittest.mock import Mock
 import pytest
 from powersensor_local import VirtualHousehold
 
-from custom_components.powersensor.PowersensorEntity import PowersensorEntity
-from custom_components.powersensor.PowersensorHouseholdEntity import PowersensorHouseholdEntity, HouseholdMeasurements
-from custom_components.powersensor.PowersensorSensorEntity import PowersensorSensorEntity
-from custom_components.powersensor.SensorMeasurements import SensorMeasurements
+from custom_components.powersensor.sensor.PowersensorEntity import PowersensorEntity
+from custom_components.powersensor.sensor.PowersensorHouseholdEntity import PowersensorHouseholdEntity, HouseholdMeasurements
+from custom_components.powersensor.sensor.PowersensorSensorEntity import PowersensorSensorEntity
+from custom_components.powersensor.sensor.SensorMeasurements import SensorMeasurements
 from custom_components.powersensor.const import (
     DOMAIN,
 )
@@ -139,7 +139,7 @@ async def test_entity_removal(hass, monkeypatch):
 async def test_powersensor_sensor_handle_role_update(hass, monkeypatch):
     # monkey patch it up!
     import importlib
-    powersensor_entity_module = importlib.import_module("custom_components.powersensor.PowersensorEntity")
+    powersensor_entity_module = importlib.import_module("custom_components.powersensor.sensor.PowersensorEntity")
     er = Mock()
     dr = Mock()
 
@@ -154,7 +154,7 @@ async def test_powersensor_sensor_handle_role_update(hass, monkeypatch):
     write_state = Mock()
     abstract_powersensor_entity_class = powersensor_entity_module.PowersensorEntity
     monkeypatch.setattr(abstract_powersensor_entity_class, 'async_write_ha_state', write_state)
-    powersensor_sensor_entity_module = importlib.import_module("custom_components.powersensor.PowersensorSensorEntity")
+    powersensor_sensor_entity_module = importlib.import_module("custom_components.powersensor.sensor.PowersensorSensorEntity")
 
     entity = powersensor_sensor_entity_module.PowersensorSensorEntity(hass, MAC, 'house-net', SensorMeasurements.SUMMATION_ENERGY)
     entity._device_name = 'bad_name'

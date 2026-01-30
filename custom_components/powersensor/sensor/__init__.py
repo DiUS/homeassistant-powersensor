@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import PowersensorMessageDispatcher
+from .. import PowersensorMessageDispatcher
 from .PlugMeasurements import PlugMeasurements
 from .PowersensorHouseholdEntity import (
     HouseholdMeasurements,
@@ -21,7 +21,7 @@ from .PowersensorHouseholdEntity import (
 from .PowersensorPlugEntity import PowersensorPlugEntity
 from .PowersensorSensorEntity import PowersensorSensorEntity
 from .SensorMeasurements import SensorMeasurements
-from .const import (
+from ..const import (
     # Used config entry fields
     CFG_ROLES,
 

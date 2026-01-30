@@ -6,7 +6,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 
 from .PowersensorEntity import PowersensorEntity
 from .SensorMeasurements import SensorMeasurements
-from .const import DOMAIN, SENSOR_NAME_FORMAT
+from ..const import DOMAIN, SENSOR_NAME_FORMAT
 
 import logging
 _LOGGER = logging.getLogger(__name__)

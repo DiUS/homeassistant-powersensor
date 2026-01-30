@@ -7,7 +7,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 
 from .PlugMeasurements import PlugMeasurements
 from .PowersensorEntity import PowersensorEntity
-from .const import DOMAIN
+from ..const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
