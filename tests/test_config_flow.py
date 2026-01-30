@@ -16,6 +16,7 @@ from custom_components.powersensor import PowersensorConfigFlow
 from custom_components.powersensor.const import (
     DOMAIN,
     ROLE_UPDATE_SIGNAL,
+    RT_DISPATCHER,
     SENSOR_NAME_FORMAT,
 )
 from homeassistant.core import HomeAssistant
@@ -460,3 +461,49 @@ async def test_unknown_role(
     # Verify
     assert result["type"] == FlowResultType.ABORT
     assert called == 1
+
+
+async def test_abort_due_to_missing_runtime_data(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch, def_config_entry
+) -> None:
+    """Tests the system's response to missing runtime data during the configuration step."""
+    del(def_config_entry.runtime_data)
+
+    # Make the config_flow use our pre-canned entry
+    def my_entry(_):
+        return def_config_entry
+
+    monkeypatch.setattr(hass.config_entries, "async_get_entry", my_entry)
+
+    # Kick off the reconfigure
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={
+            "source": config_entries.SOURCE_RECONFIGURE,
+            "entry_id": def_config_entry,
+        },
+    )
+    assert result["type"] == FlowResultType.ABORT
+
+
+async def test_abort_due_to_missing_dispatcher(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch, def_config_entry
+) -> None:
+    """Tests the system's response to missing dispatcher in the runtime data during the configuration step."""
+    def_config_entry.runtime_data[RT_DISPATCHER] = None
+
+    # Make the config_flow use our pre-canned entry
+    def my_entry(_):
+        return def_config_entry
+
+    monkeypatch.setattr(hass.config_entries, "async_get_entry", my_entry)
+
+    # Kick off the reconfigure
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={
+            "source": config_entries.SOURCE_RECONFIGURE,
+            "entry_id": def_config_entry,
+        },
+    )
+    assert result["type"] == FlowResultType.ABORT

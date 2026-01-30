@@ -14,6 +14,7 @@ from custom_components.powersensor import (
 from custom_components.powersensor.config_flow import PowersensorConfigFlow
 from custom_components.powersensor.const import DOMAIN
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.loader import (
     DATA_COMPONENTS,
     DATA_INTEGRATIONS,
@@ -101,3 +102,23 @@ async def test_setup_unload_and_reload_entry(
     # Unload the entry and verify that the data has been removed
     assert await async_unload_entry(hass, def_config_entry)
     assert def_config_entry.entry_id not in hass.data[DOMAIN]
+
+
+
+async def test_setup_exception(
+    hass: HomeAssistant, hass_data, def_config_entry, monkeypatch
+) -> None:
+    """Test entry exception."""
+
+    ERRKEY="Forced start failure"
+    def fail_start(self):
+        raise RuntimeError(ERRKEY)
+
+    monkeypatch.setattr(
+        "custom_components.powersensor.PowersensorDiscoveryService.start",
+        fail_start,
+    )
+    with pytest.raises(ConfigEntryNotReady) as excinfo:
+        assert await async_setup_entry(hass, def_config_entry)
+
+    assert ERRKEY in str(excinfo.value)
