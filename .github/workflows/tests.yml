@@ -23,3 +23,6 @@ jobs:
       - name: "Run tests"
         run: |
           ./scripts/run-tests.sh --cov-fail-under=100
+      - name: "Run linting"
+        run: |
+          ./scripts/lint.sh
