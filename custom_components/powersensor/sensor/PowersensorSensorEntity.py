@@ -9,6 +9,8 @@ from homeassistant.const import (
     EntityCategory,
     UnitOfEnergy,
     UnitOfPower,
+    UnitOfVolumeFlowRate,
+    UnitOfVolume,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -69,6 +71,23 @@ _config: dict[SensorMeasurements, dict] = {
         "event": "radio_signal_quality",
         "message_key": "average_rssi",
     },
+    SensorMeasurements.LITERS_PER_MINUTE: {
+        "name": "Water Flow Rate",
+        "device_class": SensorDeviceClass.WATER,
+        "unit": UnitOfVolumeFlowRate.LITERS_PER_MINUTE,
+        "precision": 1,
+        'event': 'average_flow',
+        'message_key': 'litres_per_minute',
+    },
+    SensorMeasurements.LITERS: {
+        "name": "Total Water Consumption",
+        "device_class": SensorDeviceClass.WATER,
+        "unit": UnitOfVolume.LITERS,
+        "precision": 2,
+        "state_class": SensorStateClass.TOTAL,
+        'event': 'summation_volume',
+        'message_key': 'summation_litres',
+    }
 }
 
 

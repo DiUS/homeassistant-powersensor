@@ -11,3 +11,5 @@ class SensorMeasurements(Enum):
     SUMMATION_ENERGY = 3
     ROLE = 4
     RSSI = 5
+    LITERS_PER_MINUTE = 6
+    LITERS = 7

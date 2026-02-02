@@ -279,9 +279,13 @@ class PowersensorMessageDispatcher:
         role, persisted_role = self._get_role_info(message)
 
         # Apply persisted role information if necessary
+        if role is None:
+            if 'average_flow' in message or 'summation_litres' in message:
+                role = 'water'
+
         message['role'] = persisted_role if role is None else role
 
-        # Uknown roles from the sensor should not be allowed to overwrite
+        # Unknown roles from the sensor should not be allowed to overwrite
         # any persisted roles
         if role is not None and role != persisted_role:
             self.sensors[mac] = role
