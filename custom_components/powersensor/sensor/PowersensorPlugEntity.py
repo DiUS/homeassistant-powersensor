@@ -72,6 +72,7 @@ _config: dict[PlugMeasurements, PowersensorSensorEntityDescription] = {
     PlugMeasurements.SUMMATION_ENERGY: PowersensorSensorEntityDescription(
             key = "Total Energy",
             device_class = SensorDeviceClass.ENERGY,
+            state_class = SensorStateClass.TOTAL,
             native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
             precision = 2,
             event = "summation_energy",
