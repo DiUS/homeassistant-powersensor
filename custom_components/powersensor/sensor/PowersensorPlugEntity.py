@@ -13,79 +13,76 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 
-from ..const import DOMAIN
 from .PlugMeasurements import PlugMeasurements
-from .PowersensorEntity import PowersensorEntity
+from .PowersensorEntity import PowersensorEntity, PowersensorSensorEntityDescription
+from ..const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
 
-_config: dict[PlugMeasurements, dict] = {
-    PlugMeasurements.WATTS: {
-        "name": "Power",
-        "device_class": SensorDeviceClass.POWER,
-        "state_class": SensorStateClass.MEASUREMENT,
-        "unit": UnitOfPower.WATT,
-        "precision": 1,
-        "event": "average_power",
-        "message_key": "watts",
-    },
-    PlugMeasurements.VOLTAGE: {
-        "name": "Volts",
-        "device_class": SensorDeviceClass.VOLTAGE,
-        "state_class": SensorStateClass.MEASUREMENT,
-        "unit": UnitOfElectricPotential.VOLT,
-        "precision": 2,
-        "event": "average_power_components",
-        "message_key": "volts",
-        "visible": False,
-    },
-    PlugMeasurements.APPARENT_CURRENT: {
-        "name": "Apparent Current",
-        "device_class": SensorDeviceClass.CURRENT,
-        "state_class": SensorStateClass.MEASUREMENT,
-        "unit": UnitOfElectricCurrent.AMPERE,
-        "precision": 2,
-        "event": "average_power_components",
-        "message_key": "apparent_current",
-        "visible": False,
-    },
-    PlugMeasurements.ACTIVE_CURRENT: {
-        "name": "Active Current",
-        "device_class": SensorDeviceClass.CURRENT,
-        "state_class": SensorStateClass.MEASUREMENT,
-        "unit": UnitOfElectricCurrent.AMPERE,
-        "precision": 2,
-        "event": "average_power_components",
-        "message_key": "active_current",
-        "visible": False,
-    },
-    PlugMeasurements.REACTIVE_CURRENT: {
-        "name": "Reactive Current",
-        "device_class": SensorDeviceClass.CURRENT,
-        "state_class": SensorStateClass.MEASUREMENT,
-        "unit": UnitOfElectricCurrent.AMPERE,
-        "precision": 2,
-        "event": "average_power_components",
-        "message_key": "reactive_current",
-        "visible": False,
-    },
-    PlugMeasurements.SUMMATION_ENERGY: {
-        "name": "Total Energy",
-        "device_class": SensorDeviceClass.ENERGY,
-        "unit": UnitOfEnergy.KILO_WATT_HOUR,
-        "precision": 2,
-        "state_class": SensorStateClass.TOTAL,
-        "event": "summation_energy",
-        "message_key": "summation_joules",
-        "callback": lambda v: v / 3600000.0,
-    },
-    PlugMeasurements.ROLE: {
-        "name": "Device Role",
-        "category": EntityCategory.DIAGNOSTIC,
-        "event": "role",
-        "message_key": "role",
-    },
+_config: dict[PlugMeasurements, PowersensorSensorEntityDescription] = {
+    PlugMeasurements.WATTS:
+        PowersensorSensorEntityDescription(
+            key = "Power",
+            device_class = SensorDeviceClass.POWER,
+            state_class = SensorStateClass.MEASUREMENT,
+            native_unit_of_measurement=UnitOfPower.WATT,
+            precision = 1,
+            event = "average_power",
+            message_key = "watts",
+        ),
+    PlugMeasurements.VOLTAGE:
+        PowersensorSensorEntityDescription(
+            key = "Volts",
+            device_class = SensorDeviceClass.VOLTAGE,
+            state_class = SensorStateClass.MEASUREMENT,
+            native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+            precision = 2,
+            event = "average_power_components",
+            message_key = "volts",
+            visible = False,
+        ),
+    PlugMeasurements.APPARENT_CURRENT: PowersensorSensorEntityDescription(
+            key = "Apparent Current",
+            device_class = SensorDeviceClass.CURRENT,
+            state_class = SensorStateClass.MEASUREMENT,
+            native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+            precision = 2,
+            event = "average_power_components",
+            message_key = "apparent_current",
+            visible = False),
+    PlugMeasurements.ACTIVE_CURRENT:  PowersensorSensorEntityDescription(
+            key = "Active Current",
+            device_class = SensorDeviceClass.CURRENT,
+            state_class = SensorStateClass.MEASUREMENT,
+            native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+            precision = 2,
+            event = "average_power_components",
+            message_key = "active_current",
+            visible = False),
+    PlugMeasurements.REACTIVE_CURRENT:  PowersensorSensorEntityDescription(
+            key = "Reactive Current",
+            device_class = SensorDeviceClass.CURRENT,
+            state_class = SensorStateClass.MEASUREMENT,
+            native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+            precision = 2,
+            event = "average_power_components",
+            message_key = "reactive_current",
+            visible = False),
+    PlugMeasurements.SUMMATION_ENERGY: PowersensorSensorEntityDescription(
+            key = "Total Energy",
+            device_class = SensorDeviceClass.ENERGY,
+            native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+            precision = 2,
+            event = "summation_energy",
+            message_key = "summation_joules",
+            conversion_function = lambda v: v / 3600000.0),
+    PlugMeasurements.ROLE:
+        PowersensorSensorEntityDescription(
+            key="Device Role",
+            category =EntityCategory.DIAGNOSTIC,
+            event ="role",
+            message_key="role")
 }
 
 
@@ -105,11 +102,11 @@ class PowersensorPlugEntity(PowersensorEntity):
         self.measurement_type = measurement_type
         config = _config[measurement_type]
         self._device_name = self._default_device_name()
-        self._attr_name = f"{self._device_name} {config['name']}"
+        self._attr_name = f"{self._device_name} {config.key}"
 
     @property
     def device_info(self) -> DeviceInfo:
-        """DeviceInfo for PowersensorPlug. Includes mac, name and model."""
+        """DeviceInfo for PowersensorPlug. Includes mac address, name and model."""
         return {
             "identifiers": {(DOMAIN, self._mac)},
             "manufacturer": "Powersensor",

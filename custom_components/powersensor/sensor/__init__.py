@@ -138,26 +138,26 @@ async def async_setup_entry(
     #
     # Plug handling
     #
-    async def create_plug(plug_mac_address: str, role: str):
+    async def create_plug(plug_mac_address: str, new_plug_role: str):
         """Registers sensor entities."""
         this_plug_sensors = [
-            PowersensorPlugEntity(hass, plug_mac_address, role, PlugMeasurements.WATTS),
+            PowersensorPlugEntity(hass, plug_mac_address, new_plug_role, PlugMeasurements.WATTS),
             PowersensorPlugEntity(
-                hass, plug_mac_address, role, PlugMeasurements.VOLTAGE
+                hass, plug_mac_address, new_plug_role, PlugMeasurements.VOLTAGE
             ),
             PowersensorPlugEntity(
-                hass, plug_mac_address, role, PlugMeasurements.APPARENT_CURRENT
+                hass, plug_mac_address, new_plug_role, PlugMeasurements.APPARENT_CURRENT
             ),
             PowersensorPlugEntity(
-                hass, plug_mac_address, role, PlugMeasurements.ACTIVE_CURRENT
+                hass, plug_mac_address, new_plug_role, PlugMeasurements.ACTIVE_CURRENT
             ),
             PowersensorPlugEntity(
-                hass, plug_mac_address, role, PlugMeasurements.REACTIVE_CURRENT
+                hass, plug_mac_address, new_plug_role, PlugMeasurements.REACTIVE_CURRENT
             ),
             PowersensorPlugEntity(
-                hass, plug_mac_address, role, PlugMeasurements.SUMMATION_ENERGY
+                hass, plug_mac_address, new_plug_role, PlugMeasurements.SUMMATION_ENERGY
             ),
-            PowersensorPlugEntity(hass, plug_mac_address, role, PlugMeasurements.ROLE),
+            PowersensorPlugEntity(hass, plug_mac_address, new_plug_role, PlugMeasurements.ROLE),
         ]
 
         async_add_entities(this_plug_sensors, True)

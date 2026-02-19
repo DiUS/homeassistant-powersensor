@@ -1,12 +1,10 @@
-from datetime import date, datetime
 from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
 
-from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
+from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass, SensorEntityDescription
 from homeassistant.const import UnitOfPower, UnitOfEnergy
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.typing import StateType
 
 from powersensor_local import VirtualHousehold # type: ignore[import-untyped]
 
@@ -35,15 +33,11 @@ ProductionMeasurements = [
     HouseholdMeasurements.ENERGY_SOLAR_GENERATION
 ]
 
-@dataclass
-class EntityConfig:
-    name : str
-    device_class : SensorDeviceClass
-    state_class : SensorStateClass | None
-    unit : UnitOfPower | UnitOfEnergy
+@dataclass(frozen=True, kw_only=True)
+class PowersensorVirtualHouseholdSensorEntityDescription(SensorEntityDescription):
     formatter: Callable
-    precision: int
-    event: str
+    precision : int
+    event : str
 
 FMT_INT = lambda f: int(f)
 FMT_WS_TO_KWH = lambda f: float(f)/3600000
@@ -56,23 +50,71 @@ class PowersensorHouseholdEntity(SensorEntity):
     _attr_available = True
 
     _ENTITY_CONFIGS  = {
-        HouseholdMeasurements.POWER_HOME_USE : EntityConfig(
-            "Power - Home use", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, UnitOfPower.WATT, FMT_INT, 0, "home_usage"),
-        HouseholdMeasurements.POWER_FROM_GRID : EntityConfig(
-            "Power - From grid", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, UnitOfPower.WATT, FMT_INT, 0, "from_grid"),
-        HouseholdMeasurements.POWER_TO_GRID : EntityConfig(
-            "Power - To grid", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, UnitOfPower.WATT, FMT_INT, 0, "to_grid"),
-        HouseholdMeasurements.POWER_SOLAR_GENERATION : EntityConfig(
-            "Power - Solar generation", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, UnitOfPower.WATT, FMT_INT, 0, "solar_generation"),
+        HouseholdMeasurements.POWER_HOME_USE : PowersensorVirtualHouseholdSensorEntityDescription(
+            key = "Power - Home use",
+            device_class = SensorDeviceClass.POWER,
+            state_class = SensorStateClass.MEASUREMENT,
+            native_unit_of_measurement = UnitOfPower.WATT,
+            formatter = FMT_INT,
+            precision = 0,
+            event = "home_usage"),
+        HouseholdMeasurements.POWER_FROM_GRID : PowersensorVirtualHouseholdSensorEntityDescription(
+            key = "Power - From grid",
+            device_class = SensorDeviceClass.POWER,
+            state_class = SensorStateClass.MEASUREMENT,
+            native_unit_of_measurement = UnitOfPower.WATT,
+            formatter = FMT_INT,
+            precision = 0,
+            event = "from_grid"),
+        HouseholdMeasurements.POWER_TO_GRID : PowersensorVirtualHouseholdSensorEntityDescription(
+            key = "Power - To grid",
+            device_class = SensorDeviceClass.POWER,
+            state_class = SensorStateClass.MEASUREMENT,
+            native_unit_of_measurement = UnitOfPower.WATT,
+            formatter =  FMT_INT,
+            precision = 0,
+            event = "to_grid"),
+        HouseholdMeasurements.POWER_SOLAR_GENERATION : PowersensorVirtualHouseholdSensorEntityDescription(
+            key = "Power - Solar generation",
+            device_class = SensorDeviceClass.POWER,
+            state_class = SensorStateClass.MEASUREMENT,
+            native_unit_of_measurement = UnitOfPower.WATT,
+            formatter =  FMT_INT,
+            precision = 0,
+            event = "solar_generation"),
 
-        HouseholdMeasurements.ENERGY_HOME_USE : EntityConfig(
-            "Energy - Home usage", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, FMT_WS_TO_KWH, 3, "home_usage_summation"),
-        HouseholdMeasurements.ENERGY_FROM_GRID : EntityConfig(
-            "Energy - From grid", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, FMT_WS_TO_KWH, 3, "from_grid_summation"),
-        HouseholdMeasurements.ENERGY_TO_GRID : EntityConfig(
-            "Energy - To grid", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, FMT_WS_TO_KWH, 3, "to_grid_summation"),
-        HouseholdMeasurements.ENERGY_SOLAR_GENERATION : EntityConfig(
-            "Energy - Solar generation", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, FMT_WS_TO_KWH, 3, "solar_generation_summation"),
+        HouseholdMeasurements.ENERGY_HOME_USE : PowersensorVirtualHouseholdSensorEntityDescription(
+            key ="Energy - Home usage",
+            device_class = SensorDeviceClass.ENERGY,
+            state_class = SensorStateClass.TOTAL_INCREASING,
+            native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR,
+            formatter = FMT_WS_TO_KWH,
+            precision = 3,
+            event = "home_usage_summation"),
+        HouseholdMeasurements.ENERGY_FROM_GRID : PowersensorVirtualHouseholdSensorEntityDescription(
+            key = "Energy - From grid",
+            device_class = SensorDeviceClass.ENERGY,
+            state_class = SensorStateClass.TOTAL_INCREASING,
+            native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR,
+            formatter = FMT_WS_TO_KWH,
+            precision = 3,
+            event = "from_grid_summation"),
+        HouseholdMeasurements.ENERGY_TO_GRID : PowersensorVirtualHouseholdSensorEntityDescription(
+            key = "Energy - To grid",
+            device_class = SensorDeviceClass.ENERGY,
+            state_class = SensorStateClass.TOTAL_INCREASING,
+            native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR,
+            formatter = FMT_WS_TO_KWH,
+            precision = 3,
+            event = "to_grid_summation"),
+        HouseholdMeasurements.ENERGY_SOLAR_GENERATION : PowersensorVirtualHouseholdSensorEntityDescription(
+            key = "Energy - Solar generation",
+            device_class = SensorDeviceClass.ENERGY,
+            state_class = SensorStateClass.TOTAL_INCREASING,
+            native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR,
+            formatter = FMT_WS_TO_KWH,
+            precision = 3,
+            event = "solar_generation_summation"),
     }
 
     def __init__(self, vhh: VirtualHousehold, measurement_type: HouseholdMeasurements):
@@ -80,11 +122,11 @@ class PowersensorHouseholdEntity(SensorEntity):
         self._vhh = vhh
         self._config = self._ENTITY_CONFIGS[measurement_type]
 
-        self._attr_name = self._config.name
+        self._attr_name = self._config.key
         self._attr_unique_id = f"{DOMAIN}_vhh_{self._config.event}"
         self._attr_device_class = self._config.device_class
         self._attr_state_class = self._config.state_class
-        self._attr_native_unit_of_measurement = self._config.unit
+        self._attr_native_unit_of_measurement = self._config.native_unit_of_measurement
         self._attr_suggested_display_precision = self._config.precision
 
     @property
@@ -104,11 +146,11 @@ class PowersensorHouseholdEntity(SensorEntity):
 
     async def _on_event(self, _, msg):
         val = None
-        if self._config.unit == UnitOfPower.WATT:
+        if self._config.native_unit_of_measurement == UnitOfPower.WATT:
             key = "watts"
             if key in msg:
                 val = msg[key]
-        elif self._config.unit == UnitOfEnergy.KILO_WATT_HOUR:
+        elif self._config.native_unit_of_measurement == UnitOfEnergy.KILO_WATT_HOUR:
             key = "summation_joules"
             if key in msg:
                 val = msg[key]
