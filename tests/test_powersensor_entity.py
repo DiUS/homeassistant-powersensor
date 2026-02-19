@@ -33,7 +33,7 @@ def mock_config():
             key= "Total Energy",
             device_class= None,
             native_unit_of_measurement= None,
-            precision =2,
+            suggested_display_precision = 2,
             state_class=None,
             event = "summation_energy",
             message_key = "summation_joules",

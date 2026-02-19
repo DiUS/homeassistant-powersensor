@@ -24,14 +24,11 @@ MeasurementType = TypeVar("MeasurementType", SensorMeasurements, PlugMeasurement
 @dataclass(frozen=True, kw_only=True)
 class PowersensorSensorEntityDescription(SensorEntityDescription):
     conversion_function: Callable | None = None
-    precision : int | None = None
-    event : str | None = None
+    event: str | None = None
     message_key: str | None = None
-    visible: bool = True
-    category: EntityCategory | None = None
 
 class PowersensorEntity(SensorEntity, Generic[MeasurementType]):
-    """Powersensor Plug Class--designed to handle all measurements of the plug--perhaps less expressive."""
+    """Base class for all Powersensor entities."""
 
     def __init__(
         self,
@@ -55,15 +52,12 @@ class PowersensorEntity(SensorEntity, Generic[MeasurementType]):
         self._timeout = timedelta(seconds=timeout_seconds)  # Adjust as needed
 
         self.measurement_type: MeasurementType = measurement_type
+        self.entity_description = input_config[measurement_type]
         config : PowersensorSensorEntityDescription = input_config[measurement_type]
+        self.entity_description = config
+
         self._attr_unique_id = f"powersensor_{mac}_{measurement_type}"
-        self._attr_device_class = config.device_class
-        self._attr_native_unit_of_measurement = config.native_unit_of_measurement
         self._attr_device_info = self.device_info
-        self._attr_suggested_display_precision = config.precision
-        self._attr_entity_registry_visible_default = config.visible
-        self._attr_entity_category = config.category
-        self._attr_state_class = config.state_class
 
         self._signal = DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, config.event)
         self._message_key = config.message_key

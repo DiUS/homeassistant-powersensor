@@ -26,7 +26,7 @@ _config: dict[SensorMeasurements, PowersensorSensorEntityDescription] = {
         device_class = SensorDeviceClass.BATTERY,
         state_class = SensorStateClass.MEASUREMENT,
         native_unit_of_measurement = PERCENTAGE,
-        precision = 0,
+        suggested_display_precision = 0,
         event = "battery_level",
         message_key = "volts",
         conversion_function = lambda v: max(
@@ -38,7 +38,7 @@ _config: dict[SensorMeasurements, PowersensorSensorEntityDescription] = {
         device_class = SensorDeviceClass.POWER,
         state_class = SensorStateClass.MEASUREMENT,
         native_unit_of_measurement = UnitOfPower.WATT,
-        precision = 1,
+        suggested_display_precision = 1,
         event = "average_power",
         message_key = "watts"
     ),
@@ -46,7 +46,7 @@ _config: dict[SensorMeasurements, PowersensorSensorEntityDescription] = {
         key = "Total Energy",
         device_class = SensorDeviceClass.ENERGY,
         native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR,
-        precision = 2,
+        suggested_display_precision = 2,
         state_class = SensorStateClass.TOTAL,
         event = "summation_energy",
         message_key = "summation_joules",
@@ -54,7 +54,7 @@ _config: dict[SensorMeasurements, PowersensorSensorEntityDescription] = {
     ),
     SensorMeasurements.ROLE:  PowersensorSensorEntityDescription(
         key = "Device Role",
-        category = EntityCategory.DIAGNOSTIC,
+        entity_category = EntityCategory.DIAGNOSTIC,
         event = "role",
         message_key = "role"
     ),
@@ -63,8 +63,8 @@ _config: dict[SensorMeasurements, PowersensorSensorEntityDescription] = {
         device_class = SensorDeviceClass.SIGNAL_STRENGTH,
         state_class = SensorStateClass.MEASUREMENT,
         native_unit_of_measurement = SIGNAL_STRENGTH_DECIBELS,
-        precision = 1,
-        category = EntityCategory.DIAGNOSTIC,
+        suggested_display_precision = 1,
+        entity_category = EntityCategory.DIAGNOSTIC,
         event = "radio_signal_quality",
         message_key = "average_rssi"
     ),
