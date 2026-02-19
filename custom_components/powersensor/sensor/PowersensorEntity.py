@@ -50,7 +50,7 @@ class PowersensorEntity(SensorEntity, Generic[MeasurementType]):
         self._mac = mac
         self._model = "PowersensorDevice"
         self._device_name = f"Powersensor Device (ID: {self._mac})"
-        self._measurement_name = None
+        self._measurement_name : str | None = None
         self._remove_unavailability_tracker = None
         self._timeout = timedelta(seconds=timeout_seconds)  # Adjust as needed
 
