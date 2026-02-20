@@ -1,10 +1,11 @@
 """A generic abstract class which both PowersensorPlugs and PowersensorSensors subclass to share common methods."""
-
+from dataclasses import dataclass
 from datetime import timedelta
 import logging
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, Callable
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -20,16 +21,21 @@ _LOGGER = logging.getLogger(__name__)
 
 MeasurementType = TypeVar("MeasurementType", SensorMeasurements, PlugMeasurements)
 
+@dataclass(frozen=True, kw_only=True)
+class PowersensorSensorEntityDescription(SensorEntityDescription):
+    conversion_function: Callable | None = None
+    event: str | None = None
+    message_key: str | None = None
 
 class PowersensorEntity(SensorEntity, Generic[MeasurementType]):
-    """Powersensor Plug Class--designed to handle all measurements of the plug--perhaps less expressive."""
+    """Base class for all Powersensor entities."""
 
     def __init__(
         self,
         hass: HomeAssistant,
         mac: str,
         role: str,
-        input_config: dict[MeasurementType, dict],
+        input_config: dict[MeasurementType, PowersensorSensorEntityDescription],
         measurement_type: MeasurementType,
         timeout_seconds: int = 60,
     ) -> None:
@@ -41,24 +47,21 @@ class PowersensorEntity(SensorEntity, Generic[MeasurementType]):
         self._mac = mac
         self._model = "PowersensorDevice"
         self._device_name = f"Powersensor Device (ID: {self._mac})"
-        self._measurement_name = None
+        self._measurement_name : str | None = None
         self._remove_unavailability_tracker = None
         self._timeout = timedelta(seconds=timeout_seconds)  # Adjust as needed
 
         self.measurement_type: MeasurementType = measurement_type
-        config = input_config[measurement_type]
-        self._attr_unique_id = f"powersensor_{mac}_{measurement_type}"
-        self._attr_device_class = config.get("device_class", None)
-        self._attr_native_unit_of_measurement = config.get("unit", None)
-        self._attr_device_info = self.device_info
-        self._attr_suggested_display_precision = config.get("precision", None)
-        self._attr_entity_registry_visible_default = config.get("visible", True)
-        self._attr_entity_category = config.get("category", None)
-        self._attr_state_class = config.get("state_class", None)
+        self.entity_description = input_config[measurement_type]
+        config : PowersensorSensorEntityDescription = input_config[measurement_type]
+        self.entity_description = config
 
-        self._signal = DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, config["event"])
-        self._message_key = config.get("message_key", None)
-        self._message_callback = config.get("callback", None)
+        self._attr_unique_id = f"powersensor_{mac}_{measurement_type}"
+        self._attr_device_info = self.device_info
+
+        self._signal = DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, config.event)
+        self._message_key = config.message_key
+        self._message_callback = config.conversion_function
 
     @property
     def device_info(self) -> DeviceInfo:

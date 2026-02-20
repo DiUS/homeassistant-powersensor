@@ -168,7 +168,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_confirm(
         self, step_id: str, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        "Confirm user wants to add the powersensor integration with the plugs stored in hass.data['powersensor']."
+        """Confirm user wants to add the powersensor integration with the plugs stored in hass.data['powersensor']."""
         if user_input is not None:
             _LOGGER.debug(self.hass.data[DOMAIN]["discovered_plugs"])
             return self.async_create_entry(
@@ -183,7 +183,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_discovery_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        "Confirm user wants to add the powersensor integration with the plugs discovered."
+        """Confirm user wants to add the powersensor integration with the plugs discovered."""
         return await self.async_step_confirm(
             step_id="discovery_confirm", user_input=user_input
         )
@@ -191,7 +191,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_manual_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        "Confirm user wants to add the powersensor integration with manual configuration (typically no plugs available)."
+        """Confirm user wants to add the powersensor integration with manual configuration (typically no plugs available)."""
         return await self.async_step_confirm(
             step_id="manual_confirm", user_input=user_input
         )

@@ -467,7 +467,7 @@ async def test_abort_due_to_missing_runtime_data(
     hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch, def_config_entry
 ) -> None:
     """Tests the system's response to missing runtime data during the configuration step."""
-    del(def_config_entry.runtime_data)
+    del def_config_entry.runtime_data
 
     # Make the config_flow use our pre-canned entry
     def my_entry(_):

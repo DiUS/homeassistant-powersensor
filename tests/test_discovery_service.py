@@ -24,9 +24,6 @@ from homeassistant.core import HomeAssistant
 MAC = "a4cf1218f158"
 
 
-logging.getLogger().setLevel(logging.CRITICAL)
-
-
 @pytest.fixture
 def mock_service_info():
     """Create a mock service info."""
@@ -108,7 +105,6 @@ async def test_discovery_add_and_remove(
 
     service.remove_service(mock_zc, zc_info.type, zc_info.name)
 
-    # mock_zc.get_service_info.assert_called_once_with(zc_info.type, zc_info.name)
     mock_zc.get_service_info.assert_called_once_with(zc_info.type, zc_info.name)
     mock_send.assert_not_called()
     await asyncio.sleep(service._debounce_seconds + 1)
@@ -178,19 +174,29 @@ async def test_discovery_remove_cancel(
     # reset mock_send
     mock_send = Mock()
     monkeypatch.setattr(PowersensorServiceListener, "dispatch", mock_send)
-    # cache plug data for checking
+
+    # ensure we start from a known state
+    assert len(service._pending_removals) == 0
 
     service.remove_service(mock_zc, zc_info.type, zc_info.name)
 
-    # mock_zc.get_service_info.assert_called_once_with(zc_info.type, zc_info.name)
     mock_zc.get_service_info.assert_called_once_with(zc_info.type, zc_info.name)
     mock_send.assert_not_called()
+    assert len(service._pending_removals) == 1
 
+    # give the remove a head start before triggering the cancellation
+    await asyncio.sleep(0.5)
+
+    # re-add the service, which should cancel the pending remove
     service.add_service(mock_zc, zc_info.type, zc_info.name)
     assert mock_zc.get_service_info.call_count == 2
     mock_zc.get_service_info.assert_has_calls(
         [call(zc_info.type, zc_info.name), call(zc_info.type, zc_info.name)]
     )
+
+    # let the removal task do its cancellation stuff
+    await asyncio.sleep(0.5)
+    assert len(service._pending_removals) == 0
 
 
 @pytest.mark.asyncio

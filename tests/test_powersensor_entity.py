@@ -1,6 +1,5 @@
 """Tests covering the generic/abstract Powersensor Entity class and subclasses."""
 
-import datetime
 import importlib
 from unittest.mock import Mock
 
@@ -9,7 +8,7 @@ import pytest
 
 from custom_components.powersensor.const import DOMAIN
 from custom_components.powersensor.sensor.PowersensorEntity import (
-    PowersensorEntity,
+    PowersensorEntity, PowersensorSensorEntityDescription,
 )
 from custom_components.powersensor.sensor.PowersensorHouseholdEntity import (
     HouseholdMeasurements,
@@ -30,16 +29,16 @@ MAC = "a4cf1218f158"
 def mock_config():
     """Create a mock service info."""
     return {
-        SensorMeasurements.SUMMATION_ENERGY: {
-            "name": "Total Energy",
-            "device_class": None,
-            "unit": None,
-            "precision": 2,
-            "state_class": None,
-            "event": "summation_energy",
-            "message_key": "summation_joules",
-            "callback": lambda v: v / 3600000.0,
-        }
+        SensorMeasurements.SUMMATION_ENERGY: PowersensorSensorEntityDescription(
+            key= "Total Energy",
+            device_class= None,
+            native_unit_of_measurement= None,
+            suggested_display_precision = 2,
+            state_class=None,
+            event = "summation_energy",
+            message_key = "summation_joules",
+            conversion_function= lambda v: v / 3600000.0
+        )
     }
 
 
