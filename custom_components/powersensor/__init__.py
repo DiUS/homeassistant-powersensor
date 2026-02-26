@@ -20,8 +20,8 @@ from .const import (
     RT_VHH,
     RT_ZEROCONF,
 )
-from .PowersensorDiscoveryService import PowersensorDiscoveryService
-from .PowersensorMessageDispatcher import PowersensorMessageDispatcher
+from .powersensor_discovery_service import PowersensorDiscoveryService
+from .powersensor_message_dispatcher import PowersensorMessageDispatcher
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     manifest = integration.manifest
 
     try:
-        # Establish the zeroconf discovery service
+        # Create the zeroconf discovery service
         zeroconf_domain: str = str(manifest["zeroconf"][0])
         zeroconf_service = PowersensorDiscoveryService(hass, zeroconf_domain)
         await zeroconf_service.start()

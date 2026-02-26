@@ -189,6 +189,9 @@ class PowersensorDiscoveryService:
             with suppress(asyncio.CancelledError):
                 await self._task
 
+        if self.browser is not None:
+            self.browser.cancel()
+
         if self.zc:
             # self.zc.close()
             self.zc = None

@@ -32,6 +32,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow."""
 
     VERSION = 2
+    MINOR_VERSION = 0
 
     def __init__(self) -> None:
         """Initialize the config flow."""
@@ -42,15 +43,11 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle reconfigure step. The primary use case is adding missing roles to sensors."""
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         if entry is None or not hasattr(entry, "runtime_data"):
-            return self.async_abort(
-                reason="Cannot reconfigure. Initial configuration incomplete or broken."
-            )
+            return self.async_abort(reason="cannot_reconfigure")
 
         dispatcher = entry.runtime_data[RT_DISPATCHER]
         if dispatcher is None:
-            return self.async_abort(
-                reason="Cannot reconfigure. Initial configuration incomplete or broken."
-            )
+            return self.async_abort(reason="cannot_reconfigure")
 
         mac2name = {mac: SENSOR_NAME_FORMAT % mac for mac in dispatcher.sensors}
 
@@ -63,7 +60,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     role = None
                 _LOGGER.debug("Applying %s to %s", role, mac)
                 async_dispatcher_send(self.hass, ROLE_UPDATE_SIGNAL, mac, role)
-            return self.async_abort(reason="Roles successfully applied!")
+            return self.async_abort(reason="roles_applied")
 
         sensor_roles = {}
         description_placeholders = {}
@@ -131,14 +128,16 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle zeroconf discovery."""
-        await self._common_setup()
+        if result := await self._common_setup():
+            return result
         return await self.async_step_manual_confirm()
 
     async def async_step_zeroconf(
         self, discovery_info: zeroconf.ZeroconfServiceInfo
     ) -> ConfigFlowResult:
         """Handle zeroconf discovery."""
-        await self._common_setup()
+        if result := await self._common_setup():
+            return result
         discovered_plugs_key = "discovered_plugs"
         host = discovery_info.host
         port = discovery_info.port or DEFAULT_PORT
@@ -147,7 +146,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if "id" in properties:
             mac = properties["id"].strip()
         else:
-            return self.async_abort(reason="Plug firmware not compatible")
+            return self.async_abort(reason="firmware_not_compatible")
 
         display_name = f"🔌 Mac({mac})"
         plug_data = {
@@ -168,9 +167,12 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_confirm(
         self, step_id: str, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Confirm user wants to add the powersensor integration with the plugs stored in hass.data['powersensor']."""
+        "Confirm user wants to add the powersensor integration with the plugs stored in hass.data['powersensor']."
         if user_input is not None:
-            _LOGGER.debug(self.hass.data[DOMAIN]["discovered_plugs"])
+            _LOGGER.debug(
+                "Creating entry with discovered plugs: %s",
+                self.hass.data[DOMAIN]["discovered_plugs"],
+            )
             return self.async_create_entry(
                 title="Powersensor",
                 data={
@@ -183,7 +185,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_discovery_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Confirm user wants to add the powersensor integration with the plugs discovered."""
+        "Confirm user wants to add the powersensor integration with the plugs discovered."
         return await self.async_step_confirm(
             step_id="discovery_confirm", user_input=user_input
         )
@@ -191,7 +193,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_manual_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Confirm user wants to add the powersensor integration with manual configuration (typically no plugs available)."""
+        "Confirm user wants to add the powersensor integration with manual configuration (typically no plugs available)."
         return await self.async_step_confirm(
             step_id="manual_confirm", user_input=user_input
         )

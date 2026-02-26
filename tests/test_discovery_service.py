@@ -3,10 +3,8 @@
 import asyncio
 import importlib
 from ipaddress import ip_address
-import logging
-from unittest.mock import Mock, call
+from unittest.mock import AsyncMock, Mock, call
 
-from asyncmock import AsyncMock
 import pytest
 from zeroconf import ServiceInfo
 
@@ -16,7 +14,7 @@ from custom_components.powersensor.const import (
     ZEROCONF_REMOVE_PLUG_SIGNAL,
     ZEROCONF_UPDATE_PLUG_SIGNAL,
 )
-from custom_components.powersensor.PowersensorDiscoveryService import (
+from custom_components.powersensor.powersensor_discovery_service import (
     PowersensorServiceListener,
 )
 from homeassistant.core import HomeAssistant
@@ -313,7 +311,7 @@ async def test_discovery_dispatcher(
     - The `async_dispatcher_send` method is correctly called with signal and arguments.
     """
     mod = importlib.import_module(
-        "custom_components.powersensor.PowersensorDiscoveryService"
+        "custom_components.powersensor.powersensor_discovery_service"
     )
     mock_send = Mock()
     monkeypatch.setattr(mod, "async_dispatcher_send", mock_send)

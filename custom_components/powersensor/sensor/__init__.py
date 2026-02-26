@@ -35,16 +35,16 @@ from ..const import (
     SENSOR_ADDED_TO_HA_SIGNAL,
     UPDATE_VHH_SIGNAL,
 )
-from ..PowersensorMessageDispatcher import PowersensorMessageDispatcher
-from .PlugMeasurements import PlugMeasurements
-from .PowersensorHouseholdEntity import (
+from ..powersensor_message_dispatcher import PowersensorMessageDispatcher
+from .plug_measurements import PlugMeasurements
+from .powersensor_household_entity import (
     ConsumptionMeasurements,
     PowersensorHouseholdEntity,
     ProductionMeasurements,
 )
-from .PowersensorPlugEntity import PowersensorPlugEntity
-from .PowersensorSensorEntity import PowersensorSensorEntity
-from .SensorMeasurements import SensorMeasurements
+from .powersensor_plug_entity import PowersensorPlugEntity
+from .powersensor_sensor_entity import PowersensorSensorEntity
+from .sensor_measurements import SensorMeasurements
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -77,18 +77,18 @@ async def async_setup_entry(
     #
     async def handle_role_update(mac_address: str, new_role: str):
         """Persists role updates and signals for VHH update if needed."""
-        new_data = copy.deepcopy({ **entry.data })
-        if CFG_ROLES not in new_data.keys():
+        new_data = copy.deepcopy({**entry.data})
+        if CFG_ROLES not in new_data:
             new_data[CFG_ROLES] = {}
         roles = new_data[CFG_ROLES]
         old_role = roles.get(mac_address, None)
         if old_role is None or old_role != new_role:
             _LOGGER.debug(
-                    "Updating role for %s from %s to %s",
-                    mac_address,
-                    old_role,
-                    new_role,
-                )
+                "Updating role for %s from %s to %s",
+                mac_address,
+                old_role,
+                new_role,
+            )
             roles[mac_address] = new_role
             hass.config_entries.async_update_entry(entry, data=new_data)
 
@@ -110,7 +110,7 @@ async def async_setup_entry(
         """Registers sensor entities, signals sensor added plus VHH update if needed."""
         new_sensors = [
             PowersensorSensorEntity(
-                hass, sensor_mac, sensor_role, SensorMeasurements.Battery
+                hass, sensor_mac, sensor_role, SensorMeasurements.BATTERY
             ),
             PowersensorSensorEntity(
                 hass, sensor_mac, sensor_role, SensorMeasurements.WATTS
@@ -141,7 +141,9 @@ async def async_setup_entry(
     async def create_plug(plug_mac_address: str, new_plug_role: str):
         """Registers sensor entities."""
         this_plug_sensors = [
-            PowersensorPlugEntity(hass, plug_mac_address, new_plug_role, PlugMeasurements.WATTS),
+            PowersensorPlugEntity(
+                hass, plug_mac_address, new_plug_role, PlugMeasurements.WATTS
+            ),
             PowersensorPlugEntity(
                 hass, plug_mac_address, new_plug_role, PlugMeasurements.VOLTAGE
             ),
@@ -157,7 +159,9 @@ async def async_setup_entry(
             PowersensorPlugEntity(
                 hass, plug_mac_address, new_plug_role, PlugMeasurements.SUMMATION_ENERGY
             ),
-            PowersensorPlugEntity(hass, plug_mac_address, new_plug_role, PlugMeasurements.ROLE),
+            PowersensorPlugEntity(
+                hass, plug_mac_address, new_plug_role, PlugMeasurements.ROLE
+            ),
         ]
 
         async_add_entities(this_plug_sensors, True)
@@ -195,7 +199,7 @@ async def async_setup_entry(
         async with entry.runtime_data[RT_VHH_LOCK]:
             if not with_mains():
                 _LOGGER.debug("No house-net, VHH not yet operational")
-                return # No VHH until we have at least house-net
+                return  # No VHH until we have at least house-net
 
             mains_added = entry.runtime_data[RT_VHH_MAINS_ADDED]
             solar_added = entry.runtime_data[RT_VHH_SOLAR_ADDED]

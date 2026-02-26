@@ -38,7 +38,7 @@ def monkey_patched_dispatcher(hass: HomeAssistant, monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(hass, "async_create_background_task", create_task)
 
     powersensor_dispatcher_module = importlib.import_module(
-        "custom_components.powersensor.PowersensorMessageDispatcher"
+        "custom_components.powersensor.powersensor_message_dispatcher"
     )
 
     async_dispatcher_connect = Mock()
@@ -227,7 +227,7 @@ async def test_dispatcher_handle_plug_exception(
     """
     # for now, I pointlessly verify this does not crash
     powersensor_dispatcher_module = importlib.import_module(
-        "custom_components.powersensor.PowersensorMessageDispatcher"
+        "custom_components.powersensor.powersensor_message_dispatcher"
     )
     await powersensor_dispatcher_module._handle_exception(
         "exception", NotImplementedError
@@ -343,9 +343,13 @@ async def test_dispatcher_handle_relaying_for_none_role(
     - A sensor with a missing role is registered without a role
     """
     dispatcher = monkey_patched_dispatcher
-    await dispatcher.handle_relaying_for("test-event", {'mac': MAC, 'device_type': 'sensor', 'role': None})
+    await dispatcher.handle_relaying_for(
+        "test-event", {"mac": MAC, "device_type": "sensor", "role": None}
+    )
     assert dispatcher.dispatch_send_reference.call_count == 1
-    assert dispatcher.dispatch_send_reference.call_args_list[0] == call(dispatcher._hass, CREATE_SENSOR_SIGNAL, MAC, None)
+    assert dispatcher.dispatch_send_reference.call_args_list[0] == call(
+        dispatcher._hass, CREATE_SENSOR_SIGNAL, MAC, None
+    )
 
 
 @pytest.mark.asyncio
@@ -358,9 +362,13 @@ async def test_dispatcher_handle_relaying_for_unknown_role(
     - A sensor with unknown role is registered without a role
     """
     dispatcher = monkey_patched_dispatcher
-    await dispatcher.handle_relaying_for("test-event", {'mac': MAC, 'device_type': 'sensor', 'role': 'unknown'})
+    await dispatcher.handle_relaying_for(
+        "test-event", {"mac": MAC, "device_type": "sensor", "role": "unknown"}
+    )
     assert dispatcher.dispatch_send_reference.call_count == 1
-    assert dispatcher.dispatch_send_reference.call_args_list[0] == call(dispatcher._hass, CREATE_SENSOR_SIGNAL, MAC, None)
+    assert dispatcher.dispatch_send_reference.call_args_list[0] == call(
+        dispatcher._hass, CREATE_SENSOR_SIGNAL, MAC, None
+    )
 
 
 @pytest.mark.asyncio
@@ -374,11 +382,17 @@ async def test_dispatcher_handle_relaying_for_unknown_role_with_stored_role(
       role gets said configured role applied after creation
     """
     dispatcher = monkey_patched_dispatcher
-    dispatcher._entry.data[CFG_ROLES][MAC] = 'house-net'
-    await dispatcher.handle_relaying_for("test-event", {'mac': MAC, 'device_type': 'sensor', 'role': 'unknown'})
+    dispatcher._entry.data[CFG_ROLES][MAC] = "house-net"
+    await dispatcher.handle_relaying_for(
+        "test-event", {"mac": MAC, "device_type": "sensor", "role": "unknown"}
+    )
     assert dispatcher.dispatch_send_reference.call_count == 2
-    assert dispatcher.dispatch_send_reference.call_args_list[0] == call(dispatcher._hass, CREATE_SENSOR_SIGNAL, MAC, None)
-    assert dispatcher.dispatch_send_reference.call_args_list[1] == call(dispatcher._hass, ROLE_UPDATE_SIGNAL, MAC, 'house-net')
+    assert dispatcher.dispatch_send_reference.call_args_list[0] == call(
+        dispatcher._hass, CREATE_SENSOR_SIGNAL, MAC, None
+    )
+    assert dispatcher.dispatch_send_reference.call_args_list[1] == call(
+        dispatcher._hass, ROLE_UPDATE_SIGNAL, MAC, "house-net"
+    )
 
 
 @pytest.mark.asyncio

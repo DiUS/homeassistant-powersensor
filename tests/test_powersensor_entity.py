@@ -7,17 +7,17 @@ from powersensor_local import VirtualHousehold
 import pytest
 
 from custom_components.powersensor.const import DOMAIN
-from custom_components.powersensor.sensor.PowersensorEntity import (
+from custom_components.powersensor.sensor.powersensor_entity import (
     PowersensorEntity, PowersensorSensorEntityDescription,
 )
-from custom_components.powersensor.sensor.PowersensorHouseholdEntity import (
+from custom_components.powersensor.sensor.powersensor_household_entity import (
     HouseholdMeasurements,
     PowersensorHouseholdEntity,
 )
-from custom_components.powersensor.sensor.PowersensorSensorEntity import (
+from custom_components.powersensor.sensor.powersensor_sensor_entity import (
     PowersensorSensorEntity,
 )
-from custom_components.powersensor.sensor.SensorMeasurements import (
+from custom_components.powersensor.sensor.sensor_measurements import (
     SensorMeasurements,
 )
 from homeassistant.core import HomeAssistant
@@ -30,14 +30,14 @@ def mock_config():
     """Create a mock service info."""
     return {
         SensorMeasurements.SUMMATION_ENERGY: PowersensorSensorEntityDescription(
-            key= "Total Energy",
-            device_class= None,
-            native_unit_of_measurement= None,
-            suggested_display_precision = 2,
+            key="Total Energy",
+            device_class=None,
+            native_unit_of_measurement=None,
+            suggested_display_precision=2,
             state_class=None,
-            event = "summation_energy",
-            message_key = "summation_joules",
-            conversion_function= lambda v: v / 3600000.0
+            event="summation_energy",
+            message_key="summation_joules",
+            conversion_function=lambda v: v / 3600000.0,
         )
     }
 
@@ -47,7 +47,7 @@ def mock_config():
 async def test_generic_powersensor_entity(
     hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch, mock_config
 ) -> None:
-    """Test behavior of generic PowerSensor entities.
+    """Test behavior of generic Powersensor entities.
 
     This test verifies that:
     - Generic entities raise an `NotImplementedError` when instantiated.
@@ -71,16 +71,7 @@ async def test_generic_powersensor_entity(
             "name": self._device_name,
         },
     )
-    monkeypatch.setattr(
-        PowersensorEntity,
-        "device_info",
-        lambda self: {
-            "identifiers": {(DOMAIN, self._mac)},
-            "manufacturer": "Powersensor",
-            "model": self._model,
-            "name": self._device_name,
-        },
-    )
+
     monkeypatch.setattr(PowersensorEntity, "async_write_ha_state", lambda self: None)
     entity = PowersensorEntity(
         hass, MAC, "house-net", _config, SensorMeasurements.SUMMATION_ENERGY
@@ -217,7 +208,7 @@ async def test_powersensor_sensor_handle_role_update(
     """
 
     powersensor_entity_module = importlib.import_module(
-        "custom_components.powersensor.sensor.PowersensorEntity"
+        "custom_components.powersensor.sensor.powersensor_entity"
     )
     er = Mock()
     dr = Mock()
@@ -236,7 +227,7 @@ async def test_powersensor_sensor_handle_role_update(
         abstract_powersensor_entity_class, "async_write_ha_state", write_state
     )
     powersensor_sensor_entity_module = importlib.import_module(
-        "custom_components.powersensor.sensor.PowersensorSensorEntity"
+        "custom_components.powersensor.sensor.powersensor_sensor_entity"
     )
 
     entity = powersensor_sensor_entity_module.PowersensorSensorEntity(

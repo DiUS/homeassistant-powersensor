@@ -18,7 +18,6 @@ from homeassistant.helpers.dispatcher import (
     async_dispatcher_send,
 )
 
-from .AsyncSet import AsyncSet
 from .const import (
     # Used config entry fields
     CFG_ROLES,
@@ -40,7 +39,9 @@ UNKNOWN = "unknown"
 
 async def _handle_exception(event: str, exc: BaseException):
     """Log errors when PlugApi throws an exception."""
-    _LOGGER.error("On event %s Plug connection reported exception: %s", event, exc)
+    _LOGGER.exception(
+        "On event %s Plug connection reported exception: %s", event, exc
+    )
 
 
 def _filter_unknown(role: str):
@@ -98,13 +99,13 @@ class PowersensorMessageDispatcher:
 
         self._monitor_add_plug_queue = None
         self._stop_task = False
-        self._plug_added_queue: AsyncSet = AsyncSet()
+        self._plug_added_queue: set = set()
         self._safe_to_process_plug_queue = False
 
     async def enqueue_plug_for_adding(self, network_info: dict):
         """On receiving zeroconf data this info is added to processing buffer to await creation of entity and api."""
         _LOGGER.debug("Adding to plug processing queue: %s", network_info)
-        await self._plug_added_queue.add(
+        self._plug_added_queue.add(
             (
                 network_info["mac"],
                 network_info["host"],
@@ -134,7 +135,7 @@ class PowersensorMessageDispatcher:
         """The actual background task loop."""
         try:
             while not self._stop_task and self._plug_added_queue:
-                queue_snapshot = await self._plug_added_queue.copy()
+                queue_snapshot = self._plug_added_queue.copy()
                 for mac_address, host, port, name in queue_snapshot:
                     # @todo: maybe better to query the entity registry?
                     if not self._plug_has_been_seen(mac_address, name):
@@ -162,7 +163,7 @@ class PowersensorMessageDispatcher:
                             " Skipping and flushing from queue. ",
                             mac_address,
                         )
-                        await self._plug_added_queue.remove(
+                        self._plug_added_queue.remove(
                             (mac_address, host, port, name)
                         )
 
@@ -185,9 +186,10 @@ class PowersensorMessageDispatcher:
         """Retrieve the effective role and persisted role for this message."""
         # Filter in case older version stuck an "unknown" in there
         persisted_role = _filter_unknown(
-            self._entry.data.get(CFG_ROLES, {}).get(message['mac'], None))
+            self._entry.data.get(CFG_ROLES, {}).get(message["mac"], None)
+        )
         # The sensor *does* send "unknown", not null/None, so filter it
-        role = _filter_unknown(message.get('role', None))
+        role = _filter_unknown(message.get("role", None))
         return role, persisted_role
 
     async def stop_processing_plug_queue(self):
@@ -266,7 +268,9 @@ class PowersensorMessageDispatcher:
         # We only apply a known persisted role, so we don't clobber a sensor's
         # actual knowledge.
         if persisted_role is not None and role != persisted_role:
-            _LOGGER.debug("Restoring role for %s from %s to %s", mac, role, persisted_role)
+            _LOGGER.debug(
+                "Restoring role for %s from %s to %s", mac, role, persisted_role
+            )
             async_dispatcher_send(self._hass, ROLE_UPDATE_SIGNAL, mac, persisted_role)
 
     async def handle_message(self, event: str, message: dict):
@@ -279,9 +283,9 @@ class PowersensorMessageDispatcher:
         role, persisted_role = self._get_role_info(message)
 
         # Apply persisted role information if necessary
-        message['role'] = persisted_role if role is None else role
+        message["role"] = persisted_role if role is None else role
 
-        # Uknown roles from the sensor should not be allowed to overwrite
+        # Unknown roles from the sensor should not be allowed to overwrite
         # any persisted roles
         if role is not None and role != persisted_role:
             self.sensors[mac] = role
@@ -327,7 +331,7 @@ class PowersensorMessageDispatcher:
         self, mac_address, host, port, name
     ):
         self._create_api(mac_address, host, port, name)
-        await self._plug_added_queue.remove((mac_address, host, port, name))
+        self._plug_added_queue.remove((mac_address, host, port, name))
 
     async def _plug_added(self, info):
         _LOGGER.debug(" Request to add plug received: %s", info)

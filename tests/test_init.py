@@ -4,6 +4,9 @@ This module contains unit tests to verify the functionality of the power sensor
 component, including setup, migration, and entry management.
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
+import homeassistant
 import pytest
 
 from custom_components.powersensor import (
@@ -31,12 +34,12 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 @pytest.fixture
 def hass_data(hass: HomeAssistant):
     """Fixture to provide mock data for the Home Assistant environment."""
-    hass.data.update({
+    hass.data = {
         DATA_COMPONENTS: {},
         DATA_INTEGRATIONS: {},
         DATA_MISSING_PLATFORMS: {},
         DATA_PRELOAD_PLATFORMS: [],
-    })
+    }
 
 
 ### Tests ###############################################
@@ -92,9 +95,29 @@ async def test_migrate_entry(
 
 
 async def test_setup_unload_and_reload_entry(
-    hass: HomeAssistant, hass_data, def_config_entry
+    hass: HomeAssistant,
+    hass_data,
+    def_config_entry,
+    monkeypatch: pytest.MonkeyPatch,
+    no_zeroconf,
 ) -> None:
     """Test entry setup and unload."""
+    mock_zc = AsyncMock()
+    mock_zc.async_close = AsyncMock()
+    mock_zc.loop = MagicMock()
+    mock_zc.loop.is_running.return_value = True
+
+    async def get_mock_zc(*args, **kwargs):
+        return mock_zc
+
+    monkeypatch.setattr(
+        homeassistant.components.zeroconf, "async_get_instance", get_mock_zc
+    )
+
+    monkeypatch.setattr(
+        "custom_components.powersensor.powersensor_discovery_service.ServiceBrowser",
+        MagicMock(),
+    )
 
     assert await async_setup_entry(hass, def_config_entry)
     assert DOMAIN in hass.data and def_config_entry.entry_id in hass.data[DOMAIN]
@@ -104,13 +127,13 @@ async def test_setup_unload_and_reload_entry(
     assert def_config_entry.entry_id not in hass.data[DOMAIN]
 
 
-
 async def test_setup_exception(
-    hass: HomeAssistant, hass_data, def_config_entry, monkeypatch
+    hass: HomeAssistant, hass_data, def_config_entry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Test entry exception."""
 
-    ERRKEY="Forced start failure"
+    ERRKEY = "Forced start failure"
+
     def fail_start(self):
         raise RuntimeError(ERRKEY)
 

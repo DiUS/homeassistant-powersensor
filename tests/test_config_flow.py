@@ -6,8 +6,8 @@ the power sensor component works correctly.
 
 import asyncio
 from ipaddress import ip_address
+from unittest.mock import AsyncMock
 
-from asyncmock import AsyncMock
 import pytest
 
 from homeassistant import config_entries
@@ -293,10 +293,7 @@ async def test_zeroconf_two_plugs_skipping_unique_id(
     validate_config_data(result["data"])
     assert MAC in result["data"]["devices"]
 
-    # we expect the second plug config flow to get canceled if the integration has already been configured
-    # but...for whatever reason that's not what's happening
-    # @todo: determine if we like this behaviour and update test accordingly
-    assert second_result["type"] == FlowResultType.FORM
+    assert second_result["type"] == FlowResultType.ABORT
 
 
 async def test_zeroconf_already_discovered(hass: HomeAssistant) -> None:
@@ -389,7 +386,7 @@ async def test_reconfigure(
         DOMAIN,
         context={
             "source": config_entries.SOURCE_RECONFIGURE,
-            "entry_id": def_config_entry,
+            "entry_id": def_config_entry.entry_id,
         },
     )
     assert result["type"] == FlowResultType.FORM
@@ -434,7 +431,7 @@ async def test_unknown_role(
         DOMAIN,
         context={
             "source": config_entries.SOURCE_RECONFIGURE,
-            "entry_id": def_config_entry,
+            "entry_id": def_config_entry.entry_id,
         },
     )
     assert result["type"] == FlowResultType.FORM
@@ -480,7 +477,7 @@ async def test_abort_due_to_missing_runtime_data(
         DOMAIN,
         context={
             "source": config_entries.SOURCE_RECONFIGURE,
-            "entry_id": def_config_entry,
+            "entry_id": def_config_entry.entry_id,
         },
     )
     assert result["type"] == FlowResultType.ABORT
@@ -503,7 +500,32 @@ async def test_abort_due_to_missing_dispatcher(
         DOMAIN,
         context={
             "source": config_entries.SOURCE_RECONFIGURE,
-            "entry_id": def_config_entry,
+            "entry_id": def_config_entry.entry_id,
         },
     )
     assert result["type"] == FlowResultType.ABORT
+
+
+async def test_user_already_configured(hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test behavior when trying to discover and configure a PowerSensor device that has already been discovered.
+
+    This test checks that:
+    - The first discovery attempt completes the config flow.
+    - A second discovery attempt from the same IP address is aborted with the 'already_in_progress' reason.
+    """
+    def always_true(*args, **kwargs):
+        return True
+    monkeypatch.setattr(
+        PowersensorConfigFlow, "_async_in_progress", always_true
+    )
+
+
+    monkeypatch.setattr(
+        PowersensorConfigFlow, "async_set_unique_id", AsyncMock()
+    )
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result['reason'] == "already_configured"

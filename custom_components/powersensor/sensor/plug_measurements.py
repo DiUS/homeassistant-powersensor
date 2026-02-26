@@ -1,5 +1,7 @@
 """Enum determining what measurements a Powersensor plug can report."""
+
 from enum import Enum
+
 
 class PlugMeasurements(Enum):
     """Enum to keep track of what measurements plugs can report."""
@@ -11,6 +13,3 @@ class PlugMeasurements(Enum):
     REACTIVE_CURRENT = 5
     SUMMATION_ENERGY = 6
     ROLE = 7
-
-
-
