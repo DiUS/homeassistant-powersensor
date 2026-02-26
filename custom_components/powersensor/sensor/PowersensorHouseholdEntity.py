@@ -42,7 +42,7 @@ FMT_INT = lambda f: int(f)
 FMT_WS_TO_KWH = lambda f: float(f)/3600000
 
 class PowersensorHouseholdEntity(SensorEntity):
-    """Powersensor Virtual Household entity"""
+    """Powersensor Virtual Household entity."""
 
     should_poll = False
     _attr_has_entity_name = True

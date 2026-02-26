@@ -18,7 +18,6 @@ from homeassistant.helpers.dispatcher import (
     async_dispatcher_send,
 )
 
-from .AsyncSet import AsyncSet
 from .const import (
     # Used config entry fields
     CFG_ROLES,
@@ -98,13 +97,13 @@ class PowersensorMessageDispatcher:
 
         self._monitor_add_plug_queue = None
         self._stop_task = False
-        self._plug_added_queue: AsyncSet = AsyncSet()
+        self._plug_added_queue: set = set()
         self._safe_to_process_plug_queue = False
 
     async def enqueue_plug_for_adding(self, network_info: dict):
         """On receiving zeroconf data this info is added to processing buffer to await creation of entity and api."""
         _LOGGER.debug("Adding to plug processing queue: %s", network_info)
-        await self._plug_added_queue.add(
+        self._plug_added_queue.add(
             (
                 network_info["mac"],
                 network_info["host"],
@@ -162,7 +161,7 @@ class PowersensorMessageDispatcher:
                             " Skipping and flushing from queue. ",
                             mac_address,
                         )
-                        await self._plug_added_queue.remove(
+                        self._plug_added_queue.remove(
                             (mac_address, host, port, name)
                         )
 
@@ -327,7 +326,7 @@ class PowersensorMessageDispatcher:
         self, mac_address, host, port, name
     ):
         self._create_api(mac_address, host, port, name)
-        await self._plug_added_queue.remove((mac_address, host, port, name))
+        self._plug_added_queue.remove((mac_address, host, port, name))
 
     async def _plug_added(self, info):
         _LOGGER.debug(" Request to add plug received: %s", info)

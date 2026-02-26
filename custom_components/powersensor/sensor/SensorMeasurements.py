@@ -1,4 +1,5 @@
 """Enum determining what measurements a Powersensor sensor can report."""
+
 from enum import Enum
 
 
