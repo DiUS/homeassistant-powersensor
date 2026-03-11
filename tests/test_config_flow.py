@@ -12,12 +12,16 @@ import pytest
 
 from homeassistant import config_entries
 import custom_components.powersensor
-from custom_components.powersensor import PowersensorConfigFlow
+from custom_components.powersensor import (
+    PowersensorConfigFlow,
+)
+from custom_components.powersensor.config_flow import (
+    get_translated_sensor_name,
+)
 from custom_components.powersensor.const import (
     DOMAIN,
     ROLE_UPDATE_SIGNAL,
     RT_DISPATCHER,
-    SENSOR_NAME_FORMAT,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -403,7 +407,7 @@ async def test_reconfigure(
 
     # Prepare user_input, and submit it
     mac2name = {
-        mac: SENSOR_NAME_FORMAT % mac
+        mac: get_translated_sensor_name(hass, def_config_entry, mac)
         for mac in def_config_entry.runtime_data["dispatcher"].sensors
     }
     result = await hass.config_entries.flow.async_configure(
@@ -448,11 +452,11 @@ async def test_unknown_role(
 
     # Prepare user_input, and submit it
     mac2name = {
-        mac: SENSOR_NAME_FORMAT % mac
+        mac: get_translated_sensor_name(hass, def_config_entry, mac)
         for mac in def_config_entry.runtime_data["dispatcher"].sensors
     }
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], user_input={mac2name["d3adB33f"]: "<unknown>"}
+        result["flow_id"], user_input={mac2name["d3adB33f"]: "unknown"}
     )
     discon()
     # Verify

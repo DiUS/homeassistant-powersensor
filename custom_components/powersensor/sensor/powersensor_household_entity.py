@@ -66,13 +66,14 @@ def fmt_ws_to_kwh(f):
 class PowersensorHouseholdEntity(SensorEntity):
     """Powersensor Virtual Household entity."""
 
-    should_poll = False
-    _attr_has_entity_name = True
     _attr_available = True
+    _attr_has_entity_name = True
+    _attr_should_poll = False
 
     _ENTITY_CONFIGS = {
         HouseholdMeasurements.POWER_HOME_USE: PowersensorVirtualHouseholdSensorEntityDescription(
             key="Power - Home use",
+            translation_key="power_home_use",
             device_class=SensorDeviceClass.POWER,
             native_unit_of_measurement=UnitOfPower.WATT,
             state_class=SensorStateClass.MEASUREMENT,
@@ -82,6 +83,7 @@ class PowersensorHouseholdEntity(SensorEntity):
         ),
         HouseholdMeasurements.POWER_FROM_GRID: PowersensorVirtualHouseholdSensorEntityDescription(
             key="Power - From grid",
+            translation_key="power_from_grid",
             device_class=SensorDeviceClass.POWER,
             native_unit_of_measurement=UnitOfPower.WATT,
             state_class=SensorStateClass.MEASUREMENT,
@@ -91,6 +93,7 @@ class PowersensorHouseholdEntity(SensorEntity):
         ),
         HouseholdMeasurements.POWER_TO_GRID: PowersensorVirtualHouseholdSensorEntityDescription(
             key="Power - To grid",
+            translation_key="power_to_grid",
             device_class=SensorDeviceClass.POWER,
             native_unit_of_measurement=UnitOfPower.WATT,
             state_class=SensorStateClass.MEASUREMENT,
@@ -100,6 +103,7 @@ class PowersensorHouseholdEntity(SensorEntity):
         ),
         HouseholdMeasurements.POWER_SOLAR_GENERATION: PowersensorVirtualHouseholdSensorEntityDescription(
             key="Power - Solar generation",
+            translation_key="power_solar_generation",
             device_class=SensorDeviceClass.POWER,
             native_unit_of_measurement=UnitOfPower.WATT,
             state_class=SensorStateClass.MEASUREMENT,
@@ -109,6 +113,7 @@ class PowersensorHouseholdEntity(SensorEntity):
         ),
         HouseholdMeasurements.ENERGY_HOME_USE: PowersensorVirtualHouseholdSensorEntityDescription(
             key="Energy - Home usage",
+            translation_key="energy_home_use",
             device_class=SensorDeviceClass.ENERGY,
             native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
             state_class=SensorStateClass.TOTAL_INCREASING,
@@ -118,6 +123,7 @@ class PowersensorHouseholdEntity(SensorEntity):
         ),
         HouseholdMeasurements.ENERGY_FROM_GRID: PowersensorVirtualHouseholdSensorEntityDescription(
             key="Energy - From grid",
+            translation_key="energy_from_grid",
             device_class=SensorDeviceClass.ENERGY,
             state_class=SensorStateClass.TOTAL_INCREASING,
             native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
@@ -127,6 +133,7 @@ class PowersensorHouseholdEntity(SensorEntity):
         ),
         HouseholdMeasurements.ENERGY_TO_GRID: PowersensorVirtualHouseholdSensorEntityDescription(
             key="Energy - To grid",
+            translation_key="energy_to_grid",
             device_class=SensorDeviceClass.ENERGY,
             state_class=SensorStateClass.TOTAL_INCREASING,
             native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
@@ -136,6 +143,7 @@ class PowersensorHouseholdEntity(SensorEntity):
         ),
         HouseholdMeasurements.ENERGY_SOLAR_GENERATION: PowersensorVirtualHouseholdSensorEntityDescription(
             key="Energy - Solar generation",
+            translation_key="energy_solar_generation",
             device_class=SensorDeviceClass.ENERGY,
             state_class=SensorStateClass.TOTAL_INCREASING,
             native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
@@ -150,10 +158,8 @@ class PowersensorHouseholdEntity(SensorEntity):
     ) -> None:
         """Initialize the entity."""
         self._vhh = vhh
-        self._attr_should_poll = False
         self._config = self._ENTITY_CONFIGS[measurement_type]
 
-        self._attr_name = self._config.key
         self._attr_unique_id = f"vhh_{self._config.event}"
 
         self.entity_description = self._config
@@ -165,7 +171,7 @@ class PowersensorHouseholdEntity(SensorEntity):
             "identifiers": {(DOMAIN, "vhh")},
             "manufacturer": "Powersensor",
             "model": "Virtual",
-            "name": "Powersensor Household View 🏠",
+            "translation_key": "virtual_household_view",
         }
 
     async def async_added_to_hass(self):

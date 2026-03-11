@@ -6,10 +6,12 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.selector import selector
 from homeassistant.helpers.service_info import zeroconf
+from homeassistant.helpers.translation import async_get_cached_translations
 
 from .const import (
     CFG_DEVICES,
@@ -22,17 +24,28 @@ from .const import (
     ROLE_UPDATE_SIGNAL,
     ROLE_WATER,
     RT_DISPATCHER,
-    SENSOR_NAME_FORMAT,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def get_translated_sensor_name(hass: HomeAssistant, config_entry: ConfigEntry, mac: str) -> str|None:
+    """Helper to neatly format the translated name, for user input."""
+    translations = async_get_cached_translations(
+        hass, hass.config.language, "device", config_entry.domain
+    )
+    format_string = translations.get(
+        "component.powersensor.device.unknown_sensor.name",
+        "Powersensor Sensor (ID: {id})"
+    )
+    return format_string.replace("{id}", mac)
 
 
 class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow."""
 
     VERSION = 2
-    MINOR_VERSION = 0
+    MINOR_VERSION = 2
 
     def __init__(self) -> None:
         """Initialize the config flow."""
@@ -49,9 +62,9 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if dispatcher is None:
             return self.async_abort(reason="cannot_reconfigure")
 
-        mac2name = {mac: SENSOR_NAME_FORMAT % mac for mac in dispatcher.sensors}
+        mac2name = {mac: get_translated_sensor_name(self.hass, entry, mac) for mac in dispatcher.sensors}
 
-        unknown = "<unknown>"
+        unknown = "unknown"
         if user_input is not None:
             name2mac = {name: mac for mac, name in mac2name.items()}
             for name, role in user_input.items():

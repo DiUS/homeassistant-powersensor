@@ -16,9 +16,6 @@ ZEROCONF_ADD_PLUG_SIGNAL = f"{DOMAIN}_zeroconf_add_plug"
 ZEROCONF_REMOVE_PLUG_SIGNAL = f"{DOMAIN}_zeroconf_remove_plug"
 ZEROCONF_UPDATE_PLUG_SIGNAL = f"{DOMAIN}_zeroconf_update_plug"
 
-# Formatting, would've liked to have been able to have this translatable
-SENSOR_NAME_FORMAT = "Powersensor Sensor (ID: %s)"
-
 # Config entry keys
 CFG_DEVICES = "devices"
 CFG_ROLES = "roles"

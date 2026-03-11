@@ -71,7 +71,7 @@ def def_config_entry():
     )
 
     class MockDispatcher:
-        sensors = ["coo1eat5", "cafebabe", "d3adB33f"]
+        sensors = ["c001eat5", "cafebabe", "d3adB33f"]
 
     entry.runtime_data = {"dispatcher": MockDispatcher()}
     return entry

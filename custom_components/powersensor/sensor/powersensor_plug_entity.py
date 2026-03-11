@@ -23,6 +23,7 @@ _LOGGER = logging.getLogger(__name__)
 _config: dict[PlugMeasurements, PowersensorSensorEntityDescription] = {
     PlugMeasurements.WATTS: PowersensorSensorEntityDescription(
         key="Power",
+        translation_key="power",
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfPower.WATT,
@@ -32,6 +33,7 @@ _config: dict[PlugMeasurements, PowersensorSensorEntityDescription] = {
     ),
     PlugMeasurements.VOLTAGE: PowersensorSensorEntityDescription(
         key="Volts",
+        translation_key="volts",
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfElectricPotential.VOLT,
@@ -42,6 +44,7 @@ _config: dict[PlugMeasurements, PowersensorSensorEntityDescription] = {
     ),
     PlugMeasurements.APPARENT_CURRENT: PowersensorSensorEntityDescription(
         key="Apparent Current",
+        translation_key="apparent_current",
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
@@ -52,6 +55,7 @@ _config: dict[PlugMeasurements, PowersensorSensorEntityDescription] = {
     ),
     PlugMeasurements.ACTIVE_CURRENT: PowersensorSensorEntityDescription(
         key="Active Current",
+        translation_key="active_current",
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
@@ -62,6 +66,7 @@ _config: dict[PlugMeasurements, PowersensorSensorEntityDescription] = {
     ),
     PlugMeasurements.REACTIVE_CURRENT: PowersensorSensorEntityDescription(
         key="Reactive Current",
+        translation_key="reactive_current",
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
@@ -72,6 +77,7 @@ _config: dict[PlugMeasurements, PowersensorSensorEntityDescription] = {
     ),
     PlugMeasurements.SUMMATION_ENERGY: PowersensorSensorEntityDescription(
         key="Total Energy",
+        translation_key="total_energy",
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
@@ -82,6 +88,7 @@ _config: dict[PlugMeasurements, PowersensorSensorEntityDescription] = {
     ),
     PlugMeasurements.ROLE: PowersensorSensorEntityDescription(
         key="Device Role",
+        translation_key="device_role",
         entity_category=EntityCategory.DIAGNOSTIC,
         event="role",
         message_key="role",
@@ -92,20 +99,21 @@ _config: dict[PlugMeasurements, PowersensorSensorEntityDescription] = {
 class PowersensorPlugEntity(PowersensorEntity):
     """Powersensor Plug Class--designed to handle all measurements of the plug--perhaps less expressive."""
 
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+
     def __init__(
         self,
         hass: HomeAssistant,
+        entry_id: str,
         mac_address: str,
         role: str,
         measurement_type: PlugMeasurements,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(hass, mac_address, role, _config, measurement_type)
-        self._model = "PowersensorPlug"
+        super().__init__(hass, entry_id, mac_address, role, _config, measurement_type)
         self.measurement_type = measurement_type
         config = _config[measurement_type]
-        self._device_name = self._default_device_name()
-        self._attr_name = f"{self._device_name} {config.key}"
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -113,9 +121,9 @@ class PowersensorPlugEntity(PowersensorEntity):
         return {
             "identifiers": {(DOMAIN, self._mac)},
             "manufacturer": "Powersensor",
-            "model": self._model,
-            "name": self._device_name,
+            "model": "PowersensorPlug",
+            "translation_key": "plug",
+            "translation_placeholders": {
+                "id": self._mac,
+            },
         }
-
-    def _default_device_name(self) -> str:
-        return f"Powersensor Plug (ID: {self._mac})"

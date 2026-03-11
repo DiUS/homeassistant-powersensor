@@ -1,5 +1,17 @@
 {
   "config": {
+    "abort": {
+      "already_configured": "Device is already configured",
+      "cannot_connect": "Failed to connect",
+      "cannot_reconfigure": "Cannot reconfigure. Initial configuration incomplete or broken.",
+      "firmware_not_compatible": "Plug firmware not compatible",
+      "no_devices_found": "No devices found on the network",
+      "roles_applied": "Roles successfully applied!",
+      "single_instance_allowed": "Already configured. Only a single configuration possible."
+    },
+    "error": {
+      "unknown": "Unexpected error"
+    },
     "step": {
       "discovery_confirm": {
         "description": "Do you want to add Powersensor to Home Assistant?",
@@ -9,22 +21,85 @@
         "description": "No Powersensor plugs were discovered on your network. You can still add the integration and if plugs are later discovered they will be added to Home Assistant. Do you want to add Powersensor to Home Assistant?",
         "title": "No Powersensor plugs discovered"
       },
-      "reconfigure" : {
-        "title" : "Update sensor roles",
-        "description": "Note: Roles provided by sensors will override user settings"
+      "reconfigure": {
+        "description": "Note: Roles provided by sensors will override user settings",
+        "title": "Update sensor roles"
       }
-    },
-    "error": {
-      "unknown": "Unexpected error"
-    },
-    "abort": {
-      "cannot_reconfigure": "Cannot reconfigure. Initial configuration incomplete or broken.",
-      "firmware_not_compatible": "Plug firmware not compatible",
-      "roles_applied": "Roles successfully applied!",
-      "no_devices_found": "No devices found on the network",
-      "single_instance_allowed": "Already configured. Only a single configuration possible.",
-      "already_configured": "Device is already configured",
-      "cannot_connect": "Failed to connect"
     }
+  },
+  "entity": {
+    "sensor": {
+      "power": {
+        "name": "Power"
+      },
+      "volts": {
+        "name": "Volts"
+      },
+      "apparent_current": {
+        "name": "Apparent Current"
+      },
+      "active_current": {
+        "name": "Active Current"
+      },
+      "reactive_current": {
+        "name": "Reactive Current"
+      },
+      "total_energy": {
+        "name": "Total Energy"
+      },
+      "device_role": {
+        "name": "Device Role"
+      },
+      "battery_level": {
+        "name": "Battery Level"
+      },
+      "rssi_ble": {
+        "name": "Signal strength (Bluetooth)"
+      },
+      "power_home_use": {
+        "name": "Power - Home use"
+      },
+      "power_from_grid": {
+        "name": "Power - From grid"
+      },
+      "power_to_grid": {
+        "name": "Power - To grid"
+      },
+      "power_solar_generation": {
+        "name": "Power - Solar generation"
+      },
+      "energy_home_use": {
+        "name": "Energy - Home usage"
+      },
+      "energy_from_grid": {
+        "name": "Energy - From grid"
+      },
+      "energy_to_grid": {
+        "name": "Energy - To grid"
+      },
+      "energy_solar_generation": {
+        "name": "Energy - Solar generation"
+      }
+    }
+  },
+  "device": {
+     "virtual_household_view": {
+       "name": "Powersensor Household View 🏠"
+     },
+     "plug": {
+       "name": "Powersensor Plug (ID: {id})"
+     },
+     "mains_sensor": {
+       "name": "Powersensor Mains Sensor ⚡"
+     },
+     "solar_sensor": {
+       "name": "Powersensor Solar Sensor ☀️"
+     },
+     "water_sensor": {
+       "name": "Powersensor Water Sensor 💧"
+     },
+     "unknown_sensor": {
+       "name": "Powersensor Sensor (ID: {id})"
+     }
   }
 }

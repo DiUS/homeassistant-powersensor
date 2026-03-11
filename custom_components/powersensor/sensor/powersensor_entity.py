@@ -35,9 +35,13 @@ class PowersensorSensorEntityDescription(SensorEntityDescription):
 class PowersensorEntity(SensorEntity, Generic[MeasurementType]):
     """Base class for all Powersensor entities."""
 
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+
     def __init__(
         self,
         hass: HomeAssistant,
+        config_entry_id: str,
         mac: str,
         role: str,
         input_config: dict[MeasurementType, PowersensorSensorEntityDescription],
@@ -48,8 +52,8 @@ class PowersensorEntity(SensorEntity, Generic[MeasurementType]):
         self._role = role
         self._has_recently_received_update_message = False
         self._attr_native_value = 0.0
-        self._attr_should_poll = False
         self._hass = hass
+        self._config_entry_id = config_entry_id
         self._mac = mac
         self._model = "PowersensorDevice"
         self._device_name = f"Powersensor Device (ID: {self._mac})"
@@ -63,16 +67,10 @@ class PowersensorEntity(SensorEntity, Generic[MeasurementType]):
         self.entity_description = config
 
         self._attr_unique_id = f"{mac}_{measurement_type.name}"
-        self._attr_device_info = self.device_info
 
         self._signal = DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, config.event)
         self._message_key = config.message_key
         self._message_callback = config.conversion_function
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Abstract property to for returning DeviceInfo."""
-        raise NotImplementedError
 
     @property
     def available(self) -> bool:
@@ -119,18 +117,25 @@ class PowersensorEntity(SensorEntity, Generic[MeasurementType]):
             return
 
         self._role = role
-        name_updated = self._rename_based_on_role()
+        was_updated = self._rename_based_on_role()
 
-        if name_updated:
+        if was_updated:
             device_registry = dr.async_get(self._hass)
             device = device_registry.async_get_device(identifiers={(DOMAIN, self._mac)})
-
-            if device and device.name != self._device_name:
-                # Update the device name
-                device_registry.async_update_device(device.id, name=self._device_name)
-
-            entity_registry = er.async_get(self._hass)
-            entity_registry.async_update_entity(self.entity_id, name=self._attr_name)
+            info = self.device_info
+            if device is not None and info is not None:
+                # The device registry provides no way of just updating the
+                # translation_key via dr.async_update_device(), only the
+                # name. The only way to properly apply the translation to
+                # the name is through async_get_or_create(), which also
+                # does apply the update, but requires knowing the config
+                # entry id. Hoops and roundabouts.
+                device_registry.async_get_or_create(
+                    config_entry_id = self._config_entry_id,
+                    identifiers = device.identifiers,
+                    translation_key = info["translation_key"],
+                    translation_placeholders = { "id": self._mac },
+                )
 
             self.async_write_ha_state()
 

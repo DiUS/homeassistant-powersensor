@@ -7,12 +7,18 @@ from powersensor_local import VirtualHousehold
 import pytest
 
 from custom_components.powersensor.const import DOMAIN
+from custom_components.powersensor.sensor.plug_measurements import (
+    PlugMeasurements,
+)
 from custom_components.powersensor.sensor.powersensor_entity import (
     PowersensorEntity, PowersensorSensorEntityDescription,
 )
 from custom_components.powersensor.sensor.powersensor_household_entity import (
     HouseholdMeasurements,
     PowersensorHouseholdEntity,
+)
+from custom_components.powersensor.sensor.powersensor_plug_entity import (
+    PowersensorPlugEntity,
 )
 from custom_components.powersensor.sensor.powersensor_sensor_entity import (
     PowersensorSensorEntity,
@@ -50,16 +56,10 @@ async def test_generic_powersensor_entity(
     """Test behavior of generic Powersensor entities.
 
     This test verifies that:
-    - Generic entities raise an `NotImplementedError` when instantiated.
     - Device info and availability tracking work as expected.
     - Role updates are handled correctly, including renaming logic.
     """
-
     _config = mock_config
-    with pytest.raises(NotImplementedError):
-        PowersensorEntity(
-            hass, MAC, "house-net", _config, SensorMeasurements.SUMMATION_ENERGY
-        )
 
     monkeypatch.setattr(
         PowersensorEntity,
@@ -68,14 +68,15 @@ async def test_generic_powersensor_entity(
             "identifiers": {(DOMAIN, self._mac)},
             "manufacturer": "Powersensor",
             "model": self._model,
-            "name": self._device_name,
+            "translation_key": "unknown_sensor",
         },
     )
 
     monkeypatch.setattr(PowersensorEntity, "async_write_ha_state", lambda self: None)
     entity = PowersensorEntity(
-        hass, MAC, "house-net", _config, SensorMeasurements.SUMMATION_ENERGY
+        hass, "", MAC, "house-net", _config, SensorMeasurements.SUMMATION_ENERGY
     )
+
     assert not entity.available
     assert entity._remove_unavailability_tracker is None
     entity._handle_update("event", {})
@@ -113,23 +114,48 @@ async def test_powersensor_sensor_default_name(
     - The entity can be successfully added to Home Assistant.
     """
     entity = PowersensorSensorEntity(
-        hass, MAC, "house-net", SensorMeasurements.SUMMATION_ENERGY
+        hass, "", MAC, "house-net", SensorMeasurements.SUMMATION_ENERGY
     )
-    entity._device_name = "bad_name"
-    entity._ensure_matching_prefix()
-    assert entity._device_name == "bad_name"
-    assert entity._attr_name == f"bad_name {entity._measurement_name}"
+    assert entity.device_info["translation_key"] == "mains_sensor"
+
+    entity._current_translation_key = "unknown_sensor"
+    assert entity.device_info["translation_key"] == "unknown_sensor"
 
     entity._rename_based_on_role()
     entity._rename_based_on_role()  # activate other branch where renaming isn't required
-    assert entity._device_name == "Powersensor Mains Sensor ⚡"
-    entity._ensure_matching_prefix()
-    assert (
-        entity._attr_name == f"Powersensor Mains Sensor ⚡ {entity._measurement_name}"
-    )
+    assert entity.device_info["translation_key"] == "mains_sensor"
 
     # try adding it to hass directly
     await entity.async_added_to_hass()
+
+
+@pytest.mark.asyncio
+async def test_powersensor_sensor_entity_device_info(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tests PowersensorSensorEntity provides proper device info data."""
+    entity = PowersensorSensorEntity(
+        hass, "", MAC, "solar", SensorMeasurements.SUMMATION_ENERGY
+    )
+    info = entity.device_info
+    assert info["manufacturer"] is not None
+    assert info["model"] is not None
+    assert info["translation_key"] is not None
+    assert info["translation_placeholders"] is not None
+
+@pytest.mark.asyncio
+async def test_powersensor_plug_entity_device_info(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tests PowersensorPlugEntity provides proper device info data."""
+    entity = PowersensorPlugEntity(
+        hass, "", MAC, "appliance", PlugMeasurements.SUMMATION_ENERGY
+    )
+    info = entity.device_info
+    assert info["manufacturer"] is not None
+    assert info["model"] is not None
+    assert info["translation_key"] is not None
+    assert info["translation_placeholders"] is not None
 
 
 @pytest.mark.asyncio
@@ -184,7 +210,7 @@ async def test_entity_removal(
     - The entity's unavailability tracker is called when removing from Home Assistant.
     """
     entity = PowersensorSensorEntity(
-        hass, MAC, "house-net", SensorMeasurements.SUMMATION_ENERGY
+        hass, "", MAC, "house-net", SensorMeasurements.SUMMATION_ENERGY
     )
     entity._has_recently_received_update_message = True  # make available
 
@@ -210,39 +236,33 @@ async def test_powersensor_sensor_handle_role_update(
     powersensor_entity_module = importlib.import_module(
         "custom_components.powersensor.sensor.powersensor_entity"
     )
-    er = Mock()
-    dr = Mock()
+    device = Mock()
 
     device_registry = Mock()
-    device = Mock()
-    dr.async_get.return_value = device_registry
     device_registry.async_get_device.return_value = device
+    device_registry.async_get_or_create.return_value = "ignored"
 
-    monkeypatch.setattr(powersensor_entity_module, "er", er)
+    dr = Mock()
+    dr.async_get.return_value = device_registry
+
     monkeypatch.setattr(powersensor_entity_module, "dr", dr)
 
     write_state = Mock()
-    abstract_powersensor_entity_class = powersensor_entity_module.PowersensorEntity
     monkeypatch.setattr(
-        abstract_powersensor_entity_class, "async_write_ha_state", write_state
-    )
-    powersensor_sensor_entity_module = importlib.import_module(
-        "custom_components.powersensor.sensor.powersensor_sensor_entity"
+        PowersensorEntity, "async_write_ha_state", write_state
     )
 
-    entity = powersensor_sensor_entity_module.PowersensorSensorEntity(
-        hass, MAC, "house-net", SensorMeasurements.SUMMATION_ENERGY
+    entity = PowersensorSensorEntity(
+        hass, "", MAC, "house-net", SensorMeasurements.SUMMATION_ENERGY
     )
-    entity._device_name = "bad_name"
-    entity._ensure_matching_prefix()
-    assert entity._device_name == "bad_name"
-    assert entity._attr_name == f"bad_name {entity._measurement_name}"
+    assert entity.device_info["translation_key"] == "mains_sensor"
 
     entity._handle_role_update(MAC, "solar")
 
-    assert entity._device_name == "Powersensor Solar Sensor ☀️"
-    assert entity._attr_name == f"Powersensor Solar Sensor ☀️ {entity._measurement_name}"
-    assert er.async_get.call_count == 1
+    assert dr.async_get.call_count == 1
+    assert device_registry.async_get_or_create.call_count == 1
+    assert entity.device_info["translation_key"] == "solar_sensor"
+
     # try adding it to hass directly
     await entity.async_added_to_hass()
 
@@ -271,7 +291,7 @@ async def test_powersensor_entity_handle_update(
     monkeypatch.setattr(PowersensorEntity, "async_write_ha_state", async_write_ha_state)
     _config = mock_config
     entity = PowersensorEntity(
-        hass, MAC, "house-net", _config, SensorMeasurements.SUMMATION_ENERGY
+        hass, "", MAC, "house-net", _config, SensorMeasurements.SUMMATION_ENERGY
     )
     assert not entity._has_recently_received_update_message
 

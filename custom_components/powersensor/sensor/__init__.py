@@ -63,6 +63,7 @@ async def async_setup_entry(
     entry.runtime_data[RT_VHH_SOLAR_ADDED] = False
 
     plug_role = ROLE_APPLIANCE
+    entry_id = entry.entry_id
 
     def with_solar():
         """Checks whether any known sensor has the solar role."""
@@ -110,19 +111,19 @@ async def async_setup_entry(
         """Registers sensor entities, signals sensor added plus VHH update if needed."""
         new_sensors = [
             PowersensorSensorEntity(
-                hass, sensor_mac, sensor_role, SensorMeasurements.BATTERY
+                hass, entry_id, sensor_mac, sensor_role, SensorMeasurements.BATTERY
             ),
             PowersensorSensorEntity(
-                hass, sensor_mac, sensor_role, SensorMeasurements.WATTS
+                hass, entry_id, sensor_mac, sensor_role, SensorMeasurements.WATTS
             ),
             PowersensorSensorEntity(
-                hass, sensor_mac, sensor_role, SensorMeasurements.SUMMATION_ENERGY
+                hass, entry_id, sensor_mac, sensor_role, SensorMeasurements.SUMMATION_ENERGY
             ),
             PowersensorSensorEntity(
-                hass, sensor_mac, sensor_role, SensorMeasurements.ROLE
+                hass, entry_id, sensor_mac, sensor_role, SensorMeasurements.ROLE
             ),
             PowersensorSensorEntity(
-                hass, sensor_mac, sensor_role, SensorMeasurements.RSSI
+                hass, entry_id, sensor_mac, sensor_role, SensorMeasurements.RSSI
             ),
         ]
         async_add_entities(new_sensors, True)
@@ -142,25 +143,25 @@ async def async_setup_entry(
         """Registers sensor entities."""
         this_plug_sensors = [
             PowersensorPlugEntity(
-                hass, plug_mac_address, new_plug_role, PlugMeasurements.WATTS
+                hass, entry_id, plug_mac_address, new_plug_role, PlugMeasurements.WATTS
             ),
             PowersensorPlugEntity(
-                hass, plug_mac_address, new_plug_role, PlugMeasurements.VOLTAGE
+                hass, entry_id, plug_mac_address, new_plug_role, PlugMeasurements.VOLTAGE
             ),
             PowersensorPlugEntity(
-                hass, plug_mac_address, new_plug_role, PlugMeasurements.APPARENT_CURRENT
+                hass, entry_id, plug_mac_address, new_plug_role, PlugMeasurements.APPARENT_CURRENT
             ),
             PowersensorPlugEntity(
-                hass, plug_mac_address, new_plug_role, PlugMeasurements.ACTIVE_CURRENT
+                hass, entry_id, plug_mac_address, new_plug_role, PlugMeasurements.ACTIVE_CURRENT
             ),
             PowersensorPlugEntity(
-                hass, plug_mac_address, new_plug_role, PlugMeasurements.REACTIVE_CURRENT
+                hass, entry_id, plug_mac_address, new_plug_role, PlugMeasurements.REACTIVE_CURRENT
             ),
             PowersensorPlugEntity(
-                hass, plug_mac_address, new_plug_role, PlugMeasurements.SUMMATION_ENERGY
+                hass, entry_id, plug_mac_address, new_plug_role, PlugMeasurements.SUMMATION_ENERGY
             ),
             PowersensorPlugEntity(
-                hass, plug_mac_address, new_plug_role, PlugMeasurements.ROLE
+                hass, entry_id, plug_mac_address, new_plug_role, PlugMeasurements.ROLE
             ),
         ]
 

@@ -13,7 +13,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 
-from ..const import DOMAIN, ROLE_HOUSENET, ROLE_SOLAR, ROLE_WATER, SENSOR_NAME_FORMAT
+from ..const import DOMAIN, ROLE_HOUSENET, ROLE_SOLAR, ROLE_WATER
 from .powersensor_entity import PowersensorEntity, PowersensorSensorEntityDescription
 from .sensor_measurements import SensorMeasurements
 
@@ -23,6 +23,7 @@ _LOGGER = logging.getLogger(__name__)
 _config: dict[SensorMeasurements, PowersensorSensorEntityDescription] = {
     SensorMeasurements.BATTERY: PowersensorSensorEntityDescription(
         key="Battery Level",
+        translation_key="battery_level",
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=PERCENTAGE,
@@ -35,6 +36,7 @@ _config: dict[SensorMeasurements, PowersensorSensorEntityDescription] = {
     ),
     SensorMeasurements.WATTS: PowersensorSensorEntityDescription(
         key="Power",
+        translation_key="power",
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfPower.WATT,
@@ -44,6 +46,7 @@ _config: dict[SensorMeasurements, PowersensorSensorEntityDescription] = {
     ),
     SensorMeasurements.SUMMATION_ENERGY: PowersensorSensorEntityDescription(
         key="Total Energy",
+        translation_key="total_energy",
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         suggested_display_precision=2,
@@ -54,12 +57,14 @@ _config: dict[SensorMeasurements, PowersensorSensorEntityDescription] = {
     ),
     SensorMeasurements.ROLE: PowersensorSensorEntityDescription(
         key="Device Role",
+        translation_key="device_role",
         entity_category=EntityCategory.DIAGNOSTIC,
         event="role",
         message_key="role",
     ),
     SensorMeasurements.RSSI: PowersensorSensorEntityDescription(
         key="Signal strength (Bluetooth)",
+        translation_key="rssi_ble",
         device_class=SensorDeviceClass.SIGNAL_STRENGTH,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS,
@@ -77,18 +82,17 @@ class PowersensorSensorEntity(PowersensorEntity):
     def __init__(
         self,
         hass: HomeAssistant,
+        entry_id: str,
         mac: str,
         role: str,
         measurement_type: SensorMeasurements,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(hass, mac, role, _config, measurement_type)
-        self._model = "PowersensorSensor"
+        super().__init__(hass, entry_id, mac, role, _config, measurement_type)
         self.measurement_type = measurement_type
         config: PowersensorSensorEntityDescription = _config[measurement_type]
         self._measurement_name = config.key
-        self._device_name = self._default_device_name()
-        self._attr_name = f"{self._device_name} {self._measurement_name}"
+        self._current_translation_key: str = self._get_translation_key()
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -96,30 +100,28 @@ class PowersensorSensorEntity(PowersensorEntity):
         return {
             "identifiers": {(DOMAIN, self._mac)},
             "manufacturer": "Powersensor",
-            "model": self._model,
-            "name": self._device_name,
+            "model": "PowersensorSensor",
+            "translation_key": self._current_translation_key,
+            "translation_placeholders": {
+                "id": self._mac
+            },
         }
 
-    def _ensure_matching_prefix(self):
-        if not self._attr_name.startswith(self._device_name):
-            self._attr_name = f"{self._device_name} {self._measurement_name}"
-
-    def _rename_based_on_role(self) -> bool:
-        expected_name = self._default_device_name()
-        if self._device_name != expected_name:
-            self._device_name = expected_name
-            self._ensure_matching_prefix()
-            return True
-        return False
-
-    def _default_device_name(self) -> str:
-        role2name = {
-            ROLE_HOUSENET: "Powersensor Mains Sensor ⚡",
-            ROLE_SOLAR: "Powersensor Solar Sensor ☀️",
-            ROLE_WATER: "Powersensor Water Sensor 💧",
+    def _get_translation_key(self) -> str:
+        role2key = {
+            ROLE_HOUSENET: "mains_sensor",
+            ROLE_SOLAR: "solar_sensor",
+            ROLE_WATER: "water_sensor",
         }
         return (
-            role2name[self._role]
+            role2key[self._role]
             if self._role in [ROLE_HOUSENET, ROLE_WATER, ROLE_SOLAR]
-            else SENSOR_NAME_FORMAT % self._mac
+            else "unknown_sensor"
         )
+
+    def _rename_based_on_role(self) -> bool:
+        expected_key: str = self._get_translation_key()
+        if self._current_translation_key != expected_key:
+            self._current_translation_key = expected_key
+            return True
+        return False
