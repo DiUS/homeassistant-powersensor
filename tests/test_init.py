@@ -1,12 +1,7 @@
-"""pytest tests for initial configuration/loading of powersensor component in Home Assistant.
+"""Tests for initial setup, migration, and teardown of the Powersensor component."""
 
-This module contains unit tests to verify the functionality of the power sensor
-component, including setup, migration, and entry management.
-"""
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from unittest.mock import AsyncMock, MagicMock
-
-import homeassistant
 import pytest
 
 from custom_components.powersensor import (
@@ -16,6 +11,7 @@ from custom_components.powersensor import (
 )
 from custom_components.powersensor.config_flow import PowersensorConfigFlow
 from custom_components.powersensor.const import DOMAIN
+from custom_components.powersensor.models import PowersensorRuntimeData
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.loader import (
@@ -28,32 +24,69 @@ from homeassistant.setup import async_setup_component
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-### Fixtures  ###############################################
+MAC = "a4cf1218f158"
 
 
 @pytest.fixture
 def hass_data(hass: HomeAssistant):
-    """Fixture to provide mock data for the Home Assistant environment."""
-    hass.data.update({
+    """Populate hass.data with the loader keys required by async_setup_component."""
+    hass.data = {
         DATA_COMPONENTS: {},
         DATA_INTEGRATIONS: {},
         DATA_MISSING_PLATFORMS: {},
         DATA_PRELOAD_PLATFORMS: [],
-    })
-
-
-### Tests ###############################################
+    }
 
 
 async def test_async_setup(hass: HomeAssistant, hass_data) -> None:
-    """Test the async setup function for the power sensor component."""
+    """Test that the component loads without error."""
     assert await async_setup_component(hass, DOMAIN, {}) is True
+
+
+async def test_setup_entry_malformed_device_raises_config_entry_not_ready(
+    hass: HomeAssistant,
+    hass_data,
+) -> None:
+    """Test that a malformed device dict in entry.data raises ConfigEntryNotReady.
+
+    Lines 72-73 of __init__.py catch any Exception raised inside the setup
+    try-block and re-raise it as ConfigEntryNotReady.  A missing required key
+    ('host' here) in a device dict is the most natural trigger — it causes a
+    KeyError inside enqueue_plug_for_adding without requiring any library mocks.
+    """
+    bad_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "devices": {
+                "0123456789ab": {
+                    "mac": MAC,
+                    # "host" intentionally omitted to trigger KeyError
+                    "port": 49476,
+                    "name": "test-plug",
+                }
+            },
+            "roles": {},
+        },
+        entry_id="test_malformed",
+        version=PowersensorConfigFlow.VERSION,
+        minor_version=PowersensorConfigFlow.MINOR_VERSION,
+    )
+
+    with pytest.raises(ConfigEntryNotReady) as excinfo:
+        await async_setup_entry(hass, bad_entry)
+
+    assert "Unexpected error during setup" in str(excinfo.value)
 
 
 async def test_migrate_entry(
     hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Test the migration of config entries for the power sensor component."""
+    """Test config-entry migration from v1 to the current version.
+
+    Verifies that:
+    - A v1 entry is migrated to the current version with 'devices' and 'roles' keys.
+    - An entry at a higher version than current is rejected (returns False).
+    """
     updated = False
 
     def verify_new_entry(config_entry, data, version, minor_version) -> None:
@@ -66,12 +99,9 @@ async def test_migrate_entry(
 
     monkeypatch.setattr(hass.config_entries, "async_update_entry", verify_new_entry)
 
-    # Verify old config entry migration
     old_entry = MockConfigEntry(
         domain=DOMAIN,
-        data={
-            "0123456789ab": {},  # nothing looks inside this, so cheap out
-        },
+        data={"0123456789ab": {}},
         entry_id="test",
         version=1,
         minor_version=1,
@@ -79,12 +109,9 @@ async def test_migrate_entry(
     assert await async_migrate_entry(hass, old_entry) is True
     assert updated
 
-    # Verify new config entry doesn't migrate
     new_entry = MockConfigEntry(
         domain=DOMAIN,
-        data={
-            "0123456789ab": {},  # nothing looks inside this, so cheap out
-        },
+        data={"0123456789ab": {}},
         entry_id="test",
         version=PowersensorConfigFlow.VERSION + 1,
         minor_version=1,
@@ -94,54 +121,65 @@ async def test_migrate_entry(
     assert not updated
 
 
-async def test_setup_unload_and_reload_entry(
+async def test_setup_unload_entry(
     hass: HomeAssistant,
     hass_data,
     def_config_entry,
-    monkeypatch: pytest.MonkeyPatch,
-    no_zeroconf,
 ) -> None:
-    """Test entry setup and unload."""
+    """Test that setup populates hass.data and unload cleans it up."""
     mock_zc = AsyncMock()
     mock_zc.async_close = AsyncMock()
     mock_zc.loop = MagicMock()
     mock_zc.loop.is_running.return_value = True
 
-    async def get_mock_zc(*args, **kwargs):
-        return mock_zc
+    with (
+        patch(
+            "homeassistant.components.zeroconf.async_get_instance",
+            return_value=mock_zc,
+        ),
+        patch(
+            "custom_components.powersensor.powersensor_discovery_service.ServiceBrowser",
+            MagicMock(),
+        ),
+    ):
+        assert await async_setup_entry(hass, def_config_entry)
+        assert hasattr(def_config_entry, "runtime_data")
+        assert isinstance(def_config_entry.runtime_data, PowersensorRuntimeData)
 
-    monkeypatch.setattr(
-        homeassistant.components.zeroconf, "async_get_instance", get_mock_zc
-    )
-
-    monkeypatch.setattr(
-        "custom_components.powersensor.powersensor_discovery_service.ServiceBrowser",
-        MagicMock(),
-    )
-
-    assert await async_setup_entry(hass, def_config_entry)
-    assert DOMAIN in hass.data and def_config_entry.entry_id in hass.data[DOMAIN]
-
-    # Unload the entry and verify that the data has been removed
-    assert await async_unload_entry(hass, def_config_entry)
-    assert def_config_entry.entry_id not in hass.data[DOMAIN]
+        assert await async_unload_entry(hass, def_config_entry)
 
 
 async def test_setup_exception(
-    hass: HomeAssistant, hass_data, def_config_entry, monkeypatch: pytest.MonkeyPatch
+    hass: HomeAssistant,
+    hass_data,
+    def_config_entry,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test entry exception."""
+    """Test that a RuntimeError during discovery.start() raises ConfigEntryNotReady.
 
-    ERRKEY = "Forced start failure"
+    Verifies that:
+    - ConfigEntryNotReady is raised with the original error message.
+    - stop() is called on the discovery service to avoid a resource leak.
+    """
+    errkey = "Forced start failure"
+    stop_called = []
 
-    def fail_start(self):
-        raise RuntimeError(ERRKEY)
+    async def fail_start(self):
+        raise RuntimeError(errkey)
+
+    async def record_stop(self):
+        stop_called.append(True)
 
     monkeypatch.setattr(
-        "custom_components.powersensor.PowersensorDiscoveryService.start",
+        "custom_components.powersensor.powersensor_discovery_service.PowersensorDiscoveryService.start",
         fail_start,
     )
+    monkeypatch.setattr(
+        "custom_components.powersensor.powersensor_discovery_service.PowersensorDiscoveryService.stop",
+        record_stop,
+    )
     with pytest.raises(ConfigEntryNotReady) as excinfo:
-        assert await async_setup_entry(hass, def_config_entry)
+        await async_setup_entry(hass, def_config_entry)
 
-    assert ERRKEY in str(excinfo.value)
+    assert errkey in str(excinfo.value)
+    assert stop_called, "stop() must be called to clean up after a failed start()"

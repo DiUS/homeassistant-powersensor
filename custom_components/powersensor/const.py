@@ -1,13 +1,15 @@
 """Constants for the Powersensor integration."""
 
 DOMAIN = "powersensor"
-DEFAULT_NAME = "Powersensor"
 DEFAULT_PORT = 49476
+
+# mDNS service type advertised by Powersensor gateways
+ZEROCONF_SERVICE_TYPE = "_powersensor._udp.local."
 
 # Internal signals
 CREATE_PLUG_SIGNAL = f"{DOMAIN}_create_plug"
 CREATE_SENSOR_SIGNAL = f"{DOMAIN}_create_sensor"
-DATA_UPDATE_SIGNAL_FMT_MAC_EVENT = f"{DOMAIN}_data_update_%s_%s"
+DATA_UPDATE_SIGNAL_PREFIX = f"{DOMAIN}_data_update_"
 ROLE_UPDATE_SIGNAL = f"{DOMAIN}_update_role"
 PLUG_ADDED_TO_HA_SIGNAL = f"{DOMAIN}_plug_added_to_homeassistant"
 SENSOR_ADDED_TO_HA_SIGNAL = f"{DOMAIN}_sensor_added_to_homeassistant"
@@ -24,12 +26,5 @@ CFG_ROLES = "roles"
 ROLE_APPLIANCE = "appliance"
 ROLE_HOUSENET = "house-net"
 ROLE_SOLAR = "solar"
+ROLE_UNKNOWN = "unknown"
 ROLE_WATER = "water"
-
-# runtime_data keys
-RT_DISPATCHER = "dispatcher"
-RT_VHH = "vhh"
-RT_VHH_LOCK = "vhh_update_lock"
-RT_VHH_MAINS_ADDED = "vhh_main_added"
-RT_VHH_SOLAR_ADDED = "vhh_solar_added"
-RT_ZEROCONF = "zeroconf"

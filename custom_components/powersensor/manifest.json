@@ -1,22 +1,15 @@
 {
   "domain": "powersensor",
   "name": "Powersensor",
-  "codeowners": [
-    "@bookman-dius",
-    "@jmattsson"
-  ],
+  "codeowners": ["@bookman-dius", "@jmattsson"],
   "config_flow": true,
-  "dependencies": [],
-  "documentation": "https://dius.github.io/homeassistant-powersensor/",
-  "integration_type" : "hub",
+  "dependencies": ["zeroconf"],
+  "documentation": "https://www.home-assistant.io/integrations/powersensor",
+  "integration_type": "hub",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/DiUS/homeassistant-powersensor/issues",
-  "requirements": [
-    "powersensor-local==2.1.1"
-  ],
+  "quality_scale": "bronze",
+  "requirements": ["powersensor-local==2.1.1"],
+  "version": "1.0.2",
   "single_config_entry": true,
-  "version": "1.0.1",
-  "zeroconf": [
-    "_powersensor._udp.local."
-  ]
+  "zeroconf": ["_powersensor._udp.local."]
 }

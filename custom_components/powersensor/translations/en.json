@@ -2,10 +2,10 @@
   "config": {
     "abort": {
       "already_configured": "Device is already configured",
+      "already_in_progress": "Configuration is already in progress.",
       "cannot_connect": "Failed to connect",
       "cannot_reconfigure": "Cannot reconfigure. Initial configuration incomplete or broken.",
       "firmware_not_compatible": "Plug firmware not compatible",
-      "no_devices_found": "No devices found on the network",
       "roles_applied": "Roles successfully applied!",
       "single_instance_allowed": "Already configured. Only a single configuration possible."
     },
@@ -22,84 +22,111 @@
         "title": "No Powersensor plugs discovered"
       },
       "reconfigure": {
-        "description": "Note: Roles provided by sensors will override user settings",
+        "description": "Set roles for sensors whose role is unknown or missing. To change an existing role, use the Powersensor App — sensor hardware roles set here will be overridden by the device. [Learn more]({docs_url})",
         "title": "Update sensor roles"
       }
     }
   },
+  "device": {
+    "appliance_sensor": {
+      "name": "Powersensor Appliance Sensor ({id})"
+    },
+    "mains_sensor": {
+      "name": "Powersensor Mains Sensor ⚡"
+    },
+    "plug": {
+      "name": "\uD83D\uDD0C Powersensor Plug ({id})"
+    },
+    "solar_sensor": {
+      "name": "Powersensor Solar Sensor ☀\uFE0F"
+    },
+    "unknown_sensor": {
+      "name": "Powersensor Sensor ({id})"
+    },
+    "virtual_household_view": {
+      "name": "Powersensor Household View \uD83C\uDFE0"
+    },
+    "water_sensor": {
+      "name": "Powersensor Water Sensor \uD83D\uDCA7"
+    }
+  },
   "entity": {
     "sensor": {
-      "power": {
-        "name": "Power"
-      },
-      "volts": {
-        "name": "Volts"
+      "active_current": {
+        "name": "Active Current"
       },
       "apparent_current": {
         "name": "Apparent Current"
       },
-      "active_current": {
-        "name": "Active Current"
-      },
-      "reactive_current": {
-        "name": "Reactive Current"
-      },
-      "total_energy": {
-        "name": "Total Energy"
-      },
-      "device_role": {
-        "name": "Device Role"
-      },
       "battery_level": {
         "name": "Battery Level"
       },
-      "rssi_ble": {
-        "name": "Signal strength (Bluetooth)"
-      },
-      "power_home_use": {
-        "name": "Power - Home use"
-      },
-      "power_from_grid": {
-        "name": "Power - From grid"
-      },
-      "power_to_grid": {
-        "name": "Power - To grid"
-      },
-      "power_solar_generation": {
-        "name": "Power - Solar generation"
-      },
-      "energy_home_use": {
-        "name": "Energy - Home usage"
+      "device_role": {
+        "name": "Device Role",
+        "state": {
+          "appliance": "Appliance",
+          "house_net": "Mains / House Net",
+          "solar": "Solar",
+          "unknown": "Unknown",
+          "water": "Water"
+        }
       },
       "energy_from_grid": {
         "name": "Energy - From grid"
       },
-      "energy_to_grid": {
-        "name": "Energy - To grid"
+      "energy_home_use": {
+        "name": "Energy - Home usage"
       },
       "energy_solar_generation": {
         "name": "Energy - Solar generation"
+      },
+      "energy_to_grid": {
+        "name": "Energy - To grid"
+      },
+      "power": {
+        "name": "Power"
+      },
+      "power_from_grid": {
+        "name": "Power - From grid"
+      },
+      "power_home_use": {
+        "name": "Power - Home use"
+      },
+      "power_solar_generation": {
+        "name": "Power - Solar generation"
+      },
+      "power_to_grid": {
+        "name": "Power - To grid"
+      },
+      "reactive_current": {
+        "name": "Reactive Current"
+      },
+      "rssi_ble": {
+        "name": "Signal strength (Bluetooth)"
+      },
+      "total_energy": {
+        "name": "Total Energy"
+      },
+      "total_water_consumption": {
+        "name": "Total Water Consumption"
+      },
+      "volts": {
+        "name": "Volts"
+      },
+      "water_flow_rate": {
+        "name": "Water Flow Rate"
       }
     }
   },
-  "device": {
-     "virtual_household_view": {
-       "name": "Powersensor Household View 🏠"
-     },
-     "plug": {
-       "name": "Powersensor Plug (ID: {id})"
-     },
-     "mains_sensor": {
-       "name": "Powersensor Mains Sensor ⚡"
-     },
-     "solar_sensor": {
-       "name": "Powersensor Solar Sensor ☀️"
-     },
-     "water_sensor": {
-       "name": "Powersensor Water Sensor 💧"
-     },
-     "unknown_sensor": {
-       "name": "Powersensor Sensor (ID: {id})"
-     }
+  "selector": {
+    "sensor_role": {
+      "options": {
+        "appliance": "Appliance",
+        "house-net": "Mains / House Net",
+        "solar": "Solar",
+        "unknown": "Not yet assigned",
+        "water": "Water"
+      }
+    }
   }
 }

@@ -1,31 +1,33 @@
 """PowersensorMessageDispatcher is the main coordinator of messages.
 
-The classes and utilities here mediate Powersensor PlugApi messages and updates/creation of Homeassistant Entities.
+The classes and utilities here mediate Powersensor PlugApi messages and
+updates/creation of Home Assistant entities.
 """
 
-import asyncio
-from contextlib import suppress
-import datetime
+from collections.abc import Callable
+from datetime import datetime
+from ipaddress import IPv4Address, IPv6Address, ip_address as _parse_ip
 import logging
 from typing import Any
 
-from powersensor_local import PlugApi, VirtualHousehold # type: ignore[import-untyped]
+from powersensor_local import PlugApi, VirtualHousehold
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import (
     async_dispatcher_connect,
     async_dispatcher_send,
 )
+from homeassistant.helpers.event import async_call_later
 
 from .const import (
-    # Used config entry fields
+    CFG_DEVICES,
     CFG_ROLES,
-    # Used signals
     CREATE_PLUG_SIGNAL,
     CREATE_SENSOR_SIGNAL,
-    DATA_UPDATE_SIGNAL_FMT_MAC_EVENT,
+    DATA_UPDATE_SIGNAL_PREFIX,
     PLUG_ADDED_TO_HA_SIGNAL,
+    ROLE_UNKNOWN,
     ROLE_UPDATE_SIGNAL,
     SENSOR_ADDED_TO_HA_SIGNAL,
     ZEROCONF_ADD_PLUG_SIGNAL,
@@ -34,23 +36,36 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-UNKNOWN = "unknown"
 
 
-async def _handle_exception(event: str, exc: BaseException):
-    """Log errors when PlugApi throws an exception."""
-    _LOGGER.exception(
-        "On event %s Plug connection reported exception: %s", event, exc
+def _to_ip_str(host: int | str | bytes | IPv4Address | IPv6Address) -> str:
+    """Return a dotted-decimal string from any IP representation.
+
+    ZeroconfServiceInfo.host has returned plain strings, IPv4Address objects,
+    and raw integers depending on the HA/zeroconf version in use.
+    """
+    if isinstance(host, str):
+        return host
+    return str(_parse_ip(host))
+
+
+async def _handle_exception(event: str, exc: BaseException) -> None:
+    """Log errors raised by PlugApi."""
+    _LOGGER.error(
+        "On event %s plug connection reported exception: %s",
+        event,
+        exc,
+        exc_info=exc,
     )
 
 
-def _filter_unknown(role: str):
-    """Filters out roles matching "unknown" by returning None instead."""
-    return None if role == UNKNOWN else role
+def _filter_unknown(role: str | None) -> str | None:
+    """Return None when role is the sentinel ROLE_UNKNOWN string."""
+    return None if role == ROLE_UNKNOWN else role
 
 
 class PowersensorMessageDispatcher:
-    """Message Dispatcher which sends and receives signals around HA entities."""
+    """Mediates PlugApi push messages and HA entity lifecycle signals."""
 
     def __init__(
         self,
@@ -59,9 +74,14 @@ class PowersensorMessageDispatcher:
         vhh: VirtualHousehold,
         debounce_timeout: float = 60,
     ) -> None:
-        """Constructor for message dispatcher.
+        """Initialise the dispatcher.
 
-        This class mediates the push messages from the plug api and controls updates for HA entities.
+        Args:
+            hass: The Home Assistant instance.
+            entry: The config entry this dispatcher belongs to.
+            vhh: The VirtualHousehold calculation engine.
+            debounce_timeout: Seconds to wait before treating a disappeared
+                plug/service as truly gone.
         """
         self._hass = hass
         self._entry = entry
@@ -69,12 +89,11 @@ class PowersensorMessageDispatcher:
         self.plugs: dict[str, PlugApi] = {}
         self._known_plugs: set[str] = set()
         self._known_plug_names: dict[str, str] = {}
-        self.sensors: dict[str, str] = {}
-        self.on_start_sensor_queue: dict[str, Any] = {}
-        self._pending_removals: dict[str, asyncio.Task] = {}
+        self.sensors: dict[str, str | None] = {}
+        self._on_start_sensor_queue: dict[str, str | None] = {}
+        self._pending_removals: dict[str, Callable[[], None]] = {}
         self._debounce_seconds = debounce_timeout
-        self.has_solar = False
-        self._solar_request_limit = datetime.timedelta(seconds=10)
+
         self._unsubscribe_from_signals = [
             async_dispatcher_connect(
                 self._hass, ZEROCONF_ADD_PLUG_SIGNAL, self._plug_added
@@ -97,162 +116,258 @@ class PowersensorMessageDispatcher:
             ),
         ]
 
-        self._monitor_add_plug_queue = None
-        self._stop_task = False
-        self._plug_added_queue: set = set()
-        self._safe_to_process_plug_queue = False
+        # Plug-queue state
+        # Plug-queue state: keyed by MAC so that a re-announcement of the same
+        # plug always overwrites the previous entry rather than accumulating
+        # stale tuples that can never be discarded by an exact-match set.discard().
+        self._plug_added_queue: dict[str, tuple[str, int, str]] = {}
 
-    async def enqueue_plug_for_adding(self, network_info: dict):
-        """On receiving zeroconf data this info is added to processing buffer to await creation of entity and api."""
-        _LOGGER.debug("Adding to plug processing queue: %s", network_info)
-        self._plug_added_queue.add(
-            (
-                network_info["mac"],
-                network_info["host"],
-                network_info["port"],
-                network_info["name"],
-            )
-        )
+    # ------------------------------------------------------------------
+    # Plug queue management
+    # ------------------------------------------------------------------
 
-    async def process_plug_queue(self):
-        """Start the background task if not already running."""
-        self._safe_to_process_plug_queue = True
-        if self._monitor_add_plug_queue is None or self._monitor_add_plug_queue.done():
-            self._stop_task = False
-            self._monitor_add_plug_queue = self._hass.async_create_background_task(
-                self._monitor_plug_queue(), name="plug_queue_monitor"
-            )
-            _LOGGER.debug("Background task started")
+    def enqueue_plug_for_adding(
+        self, mac: str, host: str, port: int, name: str
+    ) -> None:
+        """Buffer a plug until its HA entity and API can be created."""
+        _LOGGER.debug("Adding to plug processing queue: mac=%s host=%s", mac, host)
+        self._plug_added_queue[mac] = (host, port, name)
 
-    def _plug_has_been_seen(self, mac_address, name) -> bool:
+    def process_plug_queue(self) -> None:
+        """Process all queued plugs immediately.
+
+        Called by ``__init__.py`` after ``async_forward_entry_setups`` returns,
+        which guarantees the sensor platform (and its ``CREATE_PLUG_SIGNAL``
+        listener) is fully set up before this runs.  No polling or timing
+        assumptions are needed.
+        """
+        if not self._plug_added_queue:
+            return
+
+        for mac_address, (host, port, name) in list(self._plug_added_queue.items()):
+            try:
+                if not self._plug_has_been_seen(mac_address, name):
+                    async_dispatcher_send(
+                        self._hass,
+                        CREATE_PLUG_SIGNAL,
+                        mac_address,
+                        host,
+                        port,
+                        name,
+                    )
+                    # Discard now; _acknowledge_plug_added_to_homeassistant
+                    # will call _create_api via PLUG_ADDED_TO_HA_SIGNAL and
+                    # does its own pop — but we must not leave a stale entry
+                    # here in case that signal is lost or arrives with a
+                    # different tuple.
+                    self._plug_added_queue.pop(mac_address, None)
+                elif mac_address in self._known_plugs and mac_address not in self.plugs:
+                    _LOGGER.info(
+                        "Plug %s is known but API is missing - reconnecting without "
+                        "requesting entity creation",
+                        mac_address,
+                    )
+                    self._create_api(mac_address, host, port, name)
+                    self._plug_added_queue.pop(mac_address, None)
+                else:
+                    _LOGGER.debug(
+                        "Plug %s already created as a HA entity - flushing from queue",
+                        mac_address,
+                    )
+                    self._plug_added_queue.pop(mac_address, None)
+            except Exception:
+                _LOGGER.exception(
+                    "Error processing plug queue entry for mac=%s; skipping",
+                    mac_address,
+                )
+
+    def _plug_has_been_seen(self, mac_address: str, name: str) -> bool:
         return (
             mac_address in self.plugs
             or mac_address in self._known_plugs
             or name in self._known_plug_names
         )
 
-    async def _monitor_plug_queue(self):
-        """The actual background task loop."""
-        try:
-            while not self._stop_task and self._plug_added_queue:
-                queue_snapshot = self._plug_added_queue.copy()
-                for mac_address, host, port, name in queue_snapshot:
-                    # @todo: maybe better to query the entity registry?
-                    if not self._plug_has_been_seen(mac_address, name):
-                        async_dispatcher_send(
-                            self._hass,
-                            CREATE_PLUG_SIGNAL,
-                            mac_address,
-                            host,
-                            port,
-                            name,
-                        )
-                    elif (
-                        mac_address in self._known_plugs
-                        and mac_address not in self.plugs
-                    ):
-                        _LOGGER.info(
-                            "Plug with mac %s is known, but API is missing."
-                            "Reconnecting without requesting entity creation... ",
-                            mac_address,
-                        )
-                        self._create_api(mac_address, host, port, name)
-                    else:
-                        _LOGGER.debug(
-                            "Plug: %s has already been created as an entity in Home Assistant."
-                            " Skipping and flushing from queue. ",
-                            mac_address,
-                        )
-                        self._plug_added_queue.remove(
-                            (mac_address, host, port, name)
-                        )
+    # ------------------------------------------------------------------
+    # Sensor queue management
+    # ------------------------------------------------------------------
 
-                await asyncio.sleep(5)
-            _LOGGER.debug("Plug queue has been processed!")
+    def drain_on_start_sensor_queue(self) -> list[tuple[str, str | None]]:
+        """Return all queued startup sensors and clear the queue.
 
-        except asyncio.CancelledError:
-            _LOGGER.debug("Plug queue processing cancelled")
-            raise
-        except (
-            TimeoutError,
-            OSError,
-            NotImplementedError,
-        ) as e:  # just trying to add a little crash free safety, if not catch all errors
-            _LOGGER.error("Error in Plug queue processing task: %s", e)
-        finally:
-            self._monitor_add_plug_queue = None
+        Sensors whose relay announcements arrived before the sensor platform
+        was ready are buffered here.  ``sensor.py`` calls this once after
+        ``async_forward_entry_setups`` returns so those sensors are not missed.
+        """
+        items = list(self._on_start_sensor_queue.items())
+        self._on_start_sensor_queue.clear()
+        return items
 
-    def _get_role_info(self, message):
-        """Retrieve the effective role and persisted role for this message."""
-        # Filter in case older version stuck an "unknown" in there
-        persisted_role = _filter_unknown(
-            self._entry.data.get(CFG_ROLES, {}).get(message["mac"], None)
+    # ------------------------------------------------------------------
+    # Plug removal debouncing
+    # ------------------------------------------------------------------
+
+    def _cancel_any_pending_removal(self, mac: str, source: str) -> None:
+        """Cancel a scheduled plug removal, e.g. because the plug reappeared.
+
+        This is now synchronous: ``async_call_later`` returns a plain cancel
+        callback, so no ``await`` is needed.
+        """
+        cancel = self._pending_removals.pop(mac, None)
+        if cancel:
+            cancel()
+            _LOGGER.debug("Cancelled pending removal for %s by %s", mac, source)
+
+    def _schedule_removal(self, mac: str, name: str) -> None:
+        """Schedule plug removal after the debounce period using async_call_later."""
+
+        @callback
+        def _do_remove(_now: datetime) -> None:
+            self._pending_removals.pop(mac, None)
+            _LOGGER.debug(
+                "Plug %s still absent after timeout - processing removal", mac
+            )
+            self._hass.async_create_background_task(
+                self._disconnect_plug(mac, name),
+                name=f"Removal-Task-For-{name}",
+            )
+
+        self._pending_removals[mac] = async_call_later(
+            self._hass, self._debounce_seconds, _do_remove
         )
-        # The sensor *does* send "unknown", not null/None, so filter it
-        role = _filter_unknown(message.get("role", None))
+
+    async def _disconnect_plug(self, mac: str, name: str) -> None:
+        """Disconnect and deregister a plug API."""
+        if mac in self.plugs:
+            await self.plugs.pop(mac).disconnect()
+        self._known_plug_names.pop(name, None)
+        _LOGGER.info("API for plug %s disconnected and removed", mac)
+
+    @callback
+    def _persist_plug_info(self, mac: str, host: str, port: int, name: str) -> None:
+        """Write updated plug host/port/name into entry.data[CFG_DEVICES].
+
+        Called when mDNS reports a changed address for a known plug.  Persists
+        the current address so the next restart enqueues the correct host/port
+        from storage rather than a stale one.
+
+        Uses async_update_entry without changing version/minor_version, which
+        writes to .storage in place without triggering a config-entry reload.
+        """
+        if self._entry.state is not ConfigEntryState.LOADED:
+            # Entry is not registered with the config_entries store yet (e.g.
+            # during initial setup or in tests that use a bare Mock entry).
+            # Skip writing the data— the correct address will be persisted once the
+            # entry reaches LOADED state and a real async_update_entry is safe.
+            _LOGGER.debug(
+                "Skipping persist for plug %s — entry not in LOADED state (%s)",
+                mac,
+                self._entry.state,
+            )
+            return
+        devices: dict[str, dict[Any, Any]] = dict(self._entry.data.get(CFG_DEVICES, {}))
+        existing = dict(devices.get(mac, {}))
+        existing.update({"host": host, "port": port, "name": name, "mac": mac})
+        devices[mac] = existing
+        self._hass.config_entries.async_update_entry(
+            self._entry,
+            data={**self._entry.data, CFG_DEVICES: devices},
+        )
+        _LOGGER.debug("Persisted updated address for plug %s: %s:%s", mac, host, port)
+
+    # ------------------------------------------------------------------
+    # Role helpers
+    # ------------------------------------------------------------------
+
+    def _get_role_info(self, message: dict[str, Any]) -> tuple[str | None, str | None]:
+        """Return (reported_role, persisted_role) for the MAC in *message*."""
+        persisted_role = _filter_unknown(
+            self._entry.data.get(CFG_ROLES, {}).get(message["mac"])
+        )
+        role = _filter_unknown(message.get("role"))
         return role, persisted_role
 
-    async def stop_processing_plug_queue(self):
-        """Stop the background task."""
-        self._stop_task = True
-        if self._monitor_add_plug_queue and not self._monitor_add_plug_queue.done():
-            self._monitor_add_plug_queue.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._monitor_add_plug_queue
-            _LOGGER.debug("Background task stopped")
-            self._monitor_add_plug_queue = None
+    # ------------------------------------------------------------------
+    # Inbound zeroconf signals
+    # ------------------------------------------------------------------
 
-    async def stop_pending_removal_tasks(self):
-        """Stop the background removal tasks."""
-        # create a temporary copy to avoid concurrency problems
-        task_list = list(self._pending_removals.values())
-        for task in task_list:
-            if task and not task.done():
-                task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await task
+    @callback
+    def _plug_added(self, info: dict[str, Any]) -> None:
+        _LOGGER.debug("Request to add plug received: %s", info)
+        mac = info["properties"][b"id"].decode("utf-8")
+        self._cancel_any_pending_removal(mac, "request to add plug")
+        self.enqueue_plug_for_adding(
+            mac, _to_ip_str(info["addresses"][0]), info["port"], info["name"]
+        )
+        self.process_plug_queue()
 
-                _LOGGER.debug("Background removal task stopped")
-        self._pending_removals = {}
+    @callback
+    def _plug_updated(self, info: dict[str, Any]) -> None:
+        _LOGGER.debug("Request to update plug received: %s", info)
+        mac = info["properties"][b"id"].decode("utf-8")
+        self._cancel_any_pending_removal(mac, "request to update plug")
+        host = _to_ip_str(info["addresses"][0])
+        port = info["port"]
+        name = info["name"]
 
-    def _create_api(self, mac_address, ip, port, name):
-        _LOGGER.info("Creating API for mac=%s, ip=%s, port=%s", mac_address, ip, port)
-        api = PlugApi(mac=mac_address, ip=ip, port=port)
-        self.plugs[mac_address] = api
-        self._known_plugs.add(mac_address)
-        self._known_plug_names[name] = mac_address
-        known_evs = [
-            "average_flow",
-            "average_power",
-            "average_power_components",
-            "battery_level",
-            "radio_signal_quality",
-            "summation_energy",
-            "summation_volume",
-            #'uncalibrated_instant_reading',
-        ]
+        if mac in self.plugs:
+            current_api: PlugApi = self.plugs[mac]
+            if current_api.ip_address == host and current_api.port == port:
+                _LOGGER.debug("Plug %s update does not change IP/port - skipping", mac)
+                return
+            # Pop the stale API from the dict immediately, before scheduling
+            # the background disconnect.  If we left it in self.plugs and
+            # scheduled _disconnect_plug(mac, name), the background task would
+            # race with the _create_api() call below: by the time the task ran,
+            # self.plugs[mac] would already point to the new API, so the task
+            # would pop and disconnect the new connection instead of the stale
+            # one, leaving the plug orphaned.
+            #
+            # We intentionally do NOT touch _known_plug_names here — _create_api
+            # will overwrite it with the same name→mac mapping anyway, and
+            # removing it first would create a brief window where
+            # _schedule_plug_removal could incorrectly warn about an unknown name.
+            stale_api: PlugApi = self.plugs.pop(mac)
+            self._hass.async_create_background_task(
+                stale_api.disconnect(),
+                name=f"powersensor-disconnect-{mac}",
+            )
 
-        for ev in known_evs:
-            api.subscribe(ev, self.handle_message)
-        api.subscribe("now_relaying_for", self.handle_relaying_for)
-        api.subscribe("exception", _handle_exception)
-        api.connect()
+        # Persist the refreshed address so the next restart enqueues the
+        # correct host/port from storage rather than a stale one.
+        self._persist_plug_info(mac, host, port, name)
 
-    async def cancel_any_pending_removal(self, mac, source):
-        """Cancel removal of a plug that has been scheduled."""
-        task = self._pending_removals.pop(mac, None)
-        if task:
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
-            _LOGGER.debug("Cancelled pending removal for %s by %s. ", mac, source)
+        if mac in self._known_plugs:
+            self._create_api(mac, host, port, name)
+        else:
+            self.enqueue_plug_for_adding(mac, host, port, name)
+            self.process_plug_queue()
 
-    async def handle_relaying_for(self, event: str, message: dict):
-        """Handle a potentially new sensor being reported."""
+    @callback
+    def _schedule_plug_removal(self, name: str, info: dict[str, Any]) -> None:
+        _LOGGER.debug("Request to remove plug received: %s", info)
+        if name not in self._known_plug_names:
+            _LOGGER.warning(
+                "Received removal request for unknown gateway name [%s] - ignoring",
+                name,
+            )
+            return
+
+        mac = self._known_plug_names[name]
+        if mac in self.plugs and mac not in self._pending_removals:
+            _LOGGER.debug("Scheduling removal for %s", name)
+            self._schedule_removal(mac, name)
+
+    # ------------------------------------------------------------------
+    # Message handling
+    # ------------------------------------------------------------------
+
+    async def handle_relaying_for(self, event: str, message: dict[str, Any]) -> None:
+        """Handle a relay announcement that may introduce a new sensor."""
         mac = message.get("mac")
         device_type = message.get("device_type")
         if mac is None or device_type != "sensor":
-            _LOGGER.warning(
+            _LOGGER.debug(
                 'Ignoring relayed device with MAC "%s" and type %s', mac, device_type
             )
             return
@@ -262,161 +377,125 @@ class PowersensorMessageDispatcher:
 
         if mac not in self.sensors:
             _LOGGER.debug("Reporting new sensor %s with role %s", mac, role)
-            self.on_start_sensor_queue[mac] = role
+            self._on_start_sensor_queue[mac] = role
             async_dispatcher_send(self._hass, CREATE_SENSOR_SIGNAL, mac, role)
 
-        # We only apply a known persisted role, so we don't clobber a sensor's
-        # actual knowledge.
         if persisted_role is not None and role != persisted_role:
             _LOGGER.debug(
                 "Restoring role for %s from %s to %s", mac, role, persisted_role
             )
             async_dispatcher_send(self._hass, ROLE_UPDATE_SIGNAL, mac, persisted_role)
 
-    async def handle_message(self, event: str, message: dict):
-        """Callback for handling messages from PlugApi.
+    async def handle_message(self, event: str, message: dict[str, Any]) -> None:
+        """Route a PlugApi push message to the appropriate HA signals.
 
-        This includes but is not limited to: updating sensor data, device roles, canceling removal if data is still
-        flowing from a device but zeroconf scheduled removal and signaling for creation of new Homeassistant entities.
+        Must be ``async def``: PlugApi.subscribe awaits every registered
+        callback, so a plain synchronous function would be wrapped as a
+        coroutine and its return value silently discarded.  The ``await``
+        calls to ``self._vhh.process_*`` also require an async context.
+        The HA dispatcher calls (``async_dispatcher_send``) are synchronous
+        and do not themselves need ``await``.
         """
         mac = message["mac"]
         role, persisted_role = self._get_role_info(message)
 
-        # Apply persisted role information if necessary
         message["role"] = persisted_role if role is None else role
 
-        # Unknown roles from the sensor should not be allowed to overwrite
-        # any persisted roles
         if role is not None and role != persisted_role:
             self.sensors[mac] = role
             async_dispatcher_send(self._hass, ROLE_UPDATE_SIGNAL, mac, role)
 
-        await self.cancel_any_pending_removal(mac, "new message received from plug")
+        self._cancel_any_pending_removal(mac, "new message received from plug")
 
-        # Feed the household calculations
         if event == "average_power":
             await self._vhh.process_average_power_event(message)
         elif event == "summation_energy":
             await self._vhh.process_summation_event(message)
 
         async_dispatcher_send(
-            self._hass, DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, event), event, message
+            self._hass,
+            f"{DATA_UPDATE_SIGNAL_PREFIX}{mac}_{event}",
+            event,
+            message,
         )
 
-        # Synthesise a role type message for the role diagnostic entity
+        # Synthesise a role-type message for the role diagnostic entity.
+        # Use message["role"] (the effective role) rather than the raw `role`
+        # variable, which may be None when a persisted role has been substituted.
         async_dispatcher_send(
             self._hass,
-            DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (mac, "role"),
+            f"{DATA_UPDATE_SIGNAL_PREFIX}{mac}_role",
             "role",
-            {"role": role},
+            {"role": message["role"]},
         )
 
-    async def disconnect(self):
-        """Handle graceful disconnection of PlugApi objects."""
-        for _ in range(len(self.plugs)):
+    # ------------------------------------------------------------------
+    # Acknowledgement callbacks
+    # ------------------------------------------------------------------
+
+    @callback
+    def _acknowledge_sensor_added_to_homeassistant(
+        self, mac: str, role: str | None
+    ) -> None:
+        self.sensors[mac] = role
+        self._on_start_sensor_queue.pop(mac, None)
+
+    @callback
+    def _acknowledge_plug_added_to_homeassistant(
+        self, mac_address: str, host: str, port: int, name: str
+    ) -> None:
+        self._create_api(mac_address, host, port, name)
+        self._plug_added_queue.pop(mac_address, None)
+
+    # ------------------------------------------------------------------
+    # API creation
+    # ------------------------------------------------------------------
+
+    def _create_api(self, mac_address: str, ip: str, port: int, name: str) -> None:
+        _LOGGER.info("Creating API for mac=%s, ip=%s, port=%s", mac_address, ip, port)
+        self._known_plugs.add(mac_address)
+        self._known_plug_names[name] = mac_address
+
+        # Normalise ip to a plain string — ZeroconfServiceInfo.host has returned
+        # integers, IPv4Address objects, or strings depending on HA/zeroconf version.
+        ip = _to_ip_str(ip)
+
+        known_events = [
+            "average_flow",
+            "average_power",
+            "average_power_components",
+            "battery_level",
+            "radio_signal_quality",
+            "summation_energy",
+            "summation_volume",
+        ]
+
+        api = PlugApi(mac_address, ip, port)
+        self.plugs[mac_address] = api
+        for ev in known_events:
+            api.subscribe(ev, self.handle_message)
+        api.subscribe("now_relaying_for", self.handle_relaying_for)
+        api.subscribe("exception", _handle_exception)
+        api.connect()
+
+    # ------------------------------------------------------------------
+    # Teardown
+    # ------------------------------------------------------------------
+
+    async def stop_pending_removal_tasks(self) -> None:
+        """Cancel all outstanding plug-removal timers."""
+        for cancel in list(self._pending_removals.values()):
+            cancel()
+        self._pending_removals.clear()
+
+    async def disconnect(self) -> None:
+        """Disconnect all plug APIs and clean up."""
+        while self.plugs:
             _, api = self.plugs.popitem()
             await api.disconnect()
+
         for unsubscribe in self._unsubscribe_from_signals:
             if unsubscribe is not None:
                 unsubscribe()
 
-        await self.stop_processing_plug_queue()
         await self.stop_pending_removal_tasks()
-
-    @callback
-    def _acknowledge_sensor_added_to_homeassistant(self, mac, role):
-        self.sensors[mac] = role
-
-    async def _acknowledge_plug_added_to_homeassistant(
-        self, mac_address, host, port, name
-    ):
-        self._create_api(mac_address, host, port, name)
-        self._plug_added_queue.remove((mac_address, host, port, name))
-
-    async def _plug_added(self, info):
-        _LOGGER.debug(" Request to add plug received: %s", info)
-        network_info = {}
-        mac = info["properties"][b"id"].decode("utf-8")
-        network_info["mac"] = mac
-        await self.cancel_any_pending_removal(mac, "request to add plug")
-        network_info["host"] = info["addresses"][0]
-        network_info["port"] = info["port"]
-        network_info["name"] = info["name"]
-
-        if self._safe_to_process_plug_queue:
-            await self.enqueue_plug_for_adding(network_info)
-            await self.process_plug_queue()
-        else:
-            await self.enqueue_plug_for_adding(network_info)
-
-    async def _plug_updated(self, info) -> None:
-        _LOGGER.debug("Request to update plug received: %s", info)
-        mac = info["properties"][b"id"].decode("utf-8")
-        await self.cancel_any_pending_removal(mac, "request to update plug")
-        host = info["addresses"][0]
-        port = info["port"]
-        name = info["name"]
-
-        if mac in self.plugs:
-            current_api: PlugApi = self.plugs[mac]
-            if current_api.ip_address == host and current_api.port == port:
-                _LOGGER.debug(
-                    "Request to update plug with mac %s does not alter ip from existing API."
-                    "IP still %s and port is %s. Skipping update... ",
-                    mac,
-                    host,
-                    port,
-                )
-                return
-            await current_api.disconnect()
-
-        if mac in self._known_plugs:
-            self._create_api(mac, host, port, name)
-        else:
-            network_info = {"mac": mac, "host": host, "port": port, "name": name}
-            await self.enqueue_plug_for_adding(network_info)
-            await self.process_plug_queue()
-
-    async def _schedule_plug_removal(self, name, info):
-        _LOGGER.debug("Request to delete plug received: %s", info)
-        if name in self._known_plug_names:
-            mac = self._known_plug_names[name]
-            if mac in self.plugs:
-                if mac in self._pending_removals:
-                    # removal for this service is already pending
-                    return
-
-                _LOGGER.debug("Scheduling removal for %s", name)
-                self._pending_removals[mac] = self._hass.async_create_background_task(
-                    self._delayed_plug_remove(name, mac),
-                    name=f"Removal-Task-For-{name}",
-                )
-        else:
-            _LOGGER.warning(
-                "Received request to delete api for gateway with name [%s], but this name"
-                "is not associated with an existing PlugAPI. Ignoring... ",
-                name,
-            )
-
-    async def _delayed_plug_remove(self, name, mac):
-        """Actually process the removal after delay."""
-        try:
-            await asyncio.sleep(self._debounce_seconds)
-            _LOGGER.debug(
-                "Request to remove plug %s still pending after timeout. Processing remove request... ",
-                mac,
-            )
-            await self.plugs[mac].disconnect()
-            del self.plugs[mac]
-            del self._known_plug_names[name]
-            _LOGGER.info("API for plug %s disconnected and removed. ", mac)
-        except asyncio.CancelledError:
-            # Task was canceled because service came back
-            _LOGGER.debug(
-                "Request to remove plug %s was cancelled by request to update, add plug or new message. ",
-                mac,
-            )
-            raise
-        finally:
-            # Either way were done with this task
-            self._pending_removals.pop(mac, None)

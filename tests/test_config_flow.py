@@ -12,17 +12,15 @@ import pytest
 
 from homeassistant import config_entries
 import custom_components.powersensor
-from custom_components.powersensor import (
-    PowersensorConfigFlow,
-)
-from custom_components.powersensor.config_flow import (
-    get_translated_sensor_name,
-)
+from custom_components.powersensor import PowersensorConfigFlow
+from custom_components.powersensor.config_flow import get_sensor_display_name
 from custom_components.powersensor.const import (
     DOMAIN,
+    ROLE_UNKNOWN,
     ROLE_UPDATE_SIGNAL,
-    RT_DISPATCHER,
+    ROLE_WATER,
 )
+from custom_components.powersensor.sensor import PowersensorRuntimeData
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -216,42 +214,31 @@ async def test_zeroconf_two_plugs_race(
     )
     result, second_result = await asyncio.gather(task1, task2)
 
-    assert second_result["type"] == FlowResultType.FORM
-    assert second_result["step_id"] == "discovery_confirm"
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "discovery_confirm"
+
+    # # # we expect the plug arriving second in config flow to get canceled if the integration has already been configured
+    assert second_result["type"] == FlowResultType.ABORT
 
     second_result = await hass.config_entries.flow.async_configure(
-        second_result["flow_id"],
-        user_input={"next_step_id": second_result["step_id"]},
+        result["flow_id"],
+        user_input={"next_step_id": result["step_id"]},
     )
     assert second_result["type"] == FlowResultType.CREATE_ENTRY
     validate_config_data(second_result["data"])
-    assert SECOND_MAC in second_result["data"]["devices"]
-
-    # # # we expect the plug arriving second in config flow to get canceled if the integration has already been configured
-    assert result["type"] == FlowResultType.ABORT
+    assert MAC in second_result["data"]["devices"]
 
 
-async def test_zeroconf_two_plugs_skipping_unique_id(
-    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+async def test_zeroconf_two_plugs_simultaneous_discovery(
+    hass: HomeAssistant,
 ) -> None:
-    """Test behavior when the PowerSensor integration is configured before the second plug device is discovered.
+    """Test that simultaneous zeroconf discoveries only produce one config flow.
 
-    This test expects the first plug to complete the config flow, but the second plug's config flow to be skipped.
-    However, the current behavior does not match this expectation.
+    When two plugs are discovered at the same time, each triggers a zeroconf
+    flow. The first flow should proceed to the confirmation step; the second
+    should abort immediately with 'already_in_progress' because
+    _async_prepare_setup() detects the first flow is already running.
     """
-    call_count = 0
-    original_set_unique_id = PowersensorConfigFlow.async_set_unique_id
-
-    async def delayed_set_unique_id(self, *args, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 2:
-            return None
-        return await original_set_unique_id(self, *args, **kwargs)
-
-    monkeypatch.setattr(
-        PowersensorConfigFlow, "async_set_unique_id", delayed_set_unique_id
-    )
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
         context={"source": config_entries.SOURCE_ZEROCONF},
@@ -268,7 +255,10 @@ async def test_zeroconf_two_plugs_skipping_unique_id(
             },
         ),
     )
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "discovery_confirm"
 
+    # Second plug discovered simultaneously — should abort, not start another flow.
     second_result = await hass.config_entries.flow.async_init(
         DOMAIN,
         context={"source": config_entries.SOURCE_ZEROCONF},
@@ -285,17 +275,16 @@ async def test_zeroconf_two_plugs_skipping_unique_id(
             },
         ),
     )
+    assert second_result["type"] == FlowResultType.ABORT
+    assert second_result["reason"] == "already_in_progress"
 
-    assert result["type"] == FlowResultType.FORM
-    assert result["step_id"] == "discovery_confirm"
-
+    # Complete the first flow normally.
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         user_input={"next_step_id": result["step_id"]},
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
     validate_config_data(result["data"])
-    assert MAC in result["data"]["devices"]
 
     assert second_result["type"] == FlowResultType.ABORT
 
@@ -385,6 +374,16 @@ async def test_reconfigure(
         return def_config_entry
 
     monkeypatch.setattr(hass.config_entries, "async_get_entry", my_entry)
+
+    # Patch async_update_entry so it doesn't require the entry to be registered
+    updated_data: dict = {}
+
+    def capture_update(entry, *, data=None, **_kwargs):
+        if data is not None:
+            updated_data.update(data)
+        return True
+
+    monkeypatch.setattr(hass.config_entries, "async_update_entry", capture_update)
     # Kick off the reconfigure
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
@@ -407,8 +406,8 @@ async def test_reconfigure(
 
     # Prepare user_input, and submit it
     mac2name = {
-        mac: get_translated_sensor_name(hass, def_config_entry, mac)
-        for mac in def_config_entry.runtime_data["dispatcher"].sensors
+        mac: get_sensor_display_name(def_config_entry, mac)
+        for mac in def_config_entry.runtime_data.dispatcher.sensors
     }
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], user_input={mac2name["cafebabe"]: "water"}
@@ -429,6 +428,12 @@ async def test_unknown_role(
         return def_config_entry
 
     monkeypatch.setattr(hass.config_entries, "async_get_entry", my_entry)
+
+    # Patch async_update_entry so it doesn't require the entry to be registered
+    def capture_update(entry, *, data=None, **_kwargs):
+        return True
+
+    monkeypatch.setattr(hass.config_entries, "async_update_entry", capture_update)
 
     # Kick off the reconfigure
     result = await hass.config_entries.flow.async_init(
@@ -452,11 +457,11 @@ async def test_unknown_role(
 
     # Prepare user_input, and submit it
     mac2name = {
-        mac: get_translated_sensor_name(hass, def_config_entry, mac)
-        for mac in def_config_entry.runtime_data["dispatcher"].sensors
+        mac: get_sensor_display_name(def_config_entry, mac)
+        for mac in def_config_entry.runtime_data.dispatcher.sensors
     }
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], user_input={mac2name["d3adB33f"]: "unknown"}
+        result["flow_id"], user_input={mac2name["d3adB33f"]: ROLE_UNKNOWN}
     )
     discon()
     # Verify
@@ -491,7 +496,12 @@ async def test_abort_due_to_missing_dispatcher(
     hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch, def_config_entry
 ) -> None:
     """Tests the system's response to missing dispatcher in the runtime data during the configuration step."""
-    def_config_entry.runtime_data[RT_DISPATCHER] = None
+    _old_rd = def_config_entry.runtime_data
+    def_config_entry.runtime_data = PowersensorRuntimeData(
+        vhh=_old_rd.vhh,
+        dispatcher=None,
+        zeroconf=None,
+    )
 
     # Make the config_flow use our pre-canned entry
     def my_entry(_):
@@ -510,26 +520,109 @@ async def test_abort_due_to_missing_dispatcher(
     assert result["type"] == FlowResultType.ABORT
 
 
-async def test_user_already_configured(hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test behavior when trying to discover and configure a PowerSensor device that has already been discovered.
+async def test_user_already_configured(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test that a second user-initiated flow aborts when an entry already exists.
 
-    This test checks that:
-    - The first discovery attempt completes the config flow.
-    - A second discovery attempt from the same IP address is aborted with the 'already_in_progress' reason.
+    The integration uses single_config_entry + _abort_if_unique_id_configured()
+    as its duplicate guard. The flow should abort with 'already_configured' when
+    a config entry with the same unique ID (DOMAIN) already exists.
     """
-    def always_true(*args, **kwargs):
-        return True
-    monkeypatch.setattr(
-        PowersensorConfigFlow, "_async_in_progress", always_true
-    )
-
-
-    monkeypatch.setattr(
-        PowersensorConfigFlow, "async_set_unique_id", AsyncMock()
-    )
+    # Complete a first flow so an entry exists.
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
+    assert result["type"] == FlowResultType.FORM
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": result["step_id"]},
+    )
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+
+    # A second user flow should now abort because the unique ID is taken.
+    result2 = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    assert result2["type"] == FlowResultType.ABORT
+    assert result2["reason"] == "single_instance_allowed"
+
+
+async def test_reconfigure_sensor_disappears_between_form_and_submit(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch, def_config_entry
+) -> None:
+    """Test that a sensor that disappears between form render and submit is skipped.
+
+    Lines 103-105 of config_flow.py: mac2name is rebuilt on every call to
+    async_step_reconfigure. If dispatcher.sensors shrinks between the first
+    call (form render) and the second call (form submit), a name that was a
+    valid schema key on the first call will be absent from name2mac on the
+    second, so name2mac.get() returns None and the guard is hit.
+    """
+    monkeypatch.setattr(
+        hass.config_entries, "async_get_entry", lambda _: def_config_entry
+    )
+    monkeypatch.setattr(
+        hass.config_entries, "async_update_entry", lambda *a, **kw: True
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={
+            "source": config_entries.SOURCE_RECONFIGURE,
+            "entry_id": def_config_entry.entry_id,
+        },
+    )
+    assert result["type"] == FlowResultType.FORM
+
+    # cafebabe was present when the form was rendered — schema accepts its name.
+    # Now remove it so mac2name on the second call won't contain it,
+    # causing name2mac.get() to return None for it.
+    mac2name = {
+        mac: get_sensor_display_name(def_config_entry, mac)
+        for mac in def_config_entry.runtime_data.dispatcher.sensors
+    }
+    def_config_entry.runtime_data.dispatcher.sensors = {
+        "c001eat5": "house-net",
+        "d3adB33f": None,
+    }
+
+    signal_fired = []
+
+    async def capture_role(mac, role):
+        signal_fired.append(mac)
+
+    discon = async_dispatcher_connect(hass, ROLE_UPDATE_SIGNAL, capture_role)
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={mac2name["cafebabe"]: ROLE_WATER},
+    )
+    discon()
 
     assert result["type"] == FlowResultType.ABORT
-    assert result['reason'] == "already_configured"
+    assert result["reason"] == "roles_applied"
+    # cafebabe disappeared — its name hit the None guard, no signal fired
+    assert signal_fired == []
+
+
+async def test_user_flow_aborts_when_already_in_progress(hass: HomeAssistant) -> None:
+    """Test that a user flow aborts if another flow is already in progress.
+
+    Line 171 of config_flow.py: _async_prepare_setup returns an abort result
+    when _async_in_progress() is True.  async_step_user returns that result
+    directly.  This is triggered by starting a second user flow while the
+    first is still sitting on the confirm form.
+    """
+    # Start a first user flow and leave it on the confirm form
+    result1 = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    assert result1["type"] == FlowResultType.FORM
+
+    # Start a second user flow — _async_in_progress() is now True
+    result2 = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    assert result2["type"] == FlowResultType.ABORT
+    assert result2["reason"] == "already_in_progress"

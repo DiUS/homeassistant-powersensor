@@ -3,33 +3,36 @@
 import asyncio
 import importlib
 from ipaddress import ip_address
-import logging
 from unittest.mock import Mock, call
 
 import pytest
 
+from custom_components.powersensor import PowersensorConfigFlow
 from custom_components.powersensor.const import (
+    CFG_DEVICES,
     CFG_ROLES,
     CREATE_PLUG_SIGNAL,
     CREATE_SENSOR_SIGNAL,
-    DATA_UPDATE_SIGNAL_FMT_MAC_EVENT,
+    DATA_UPDATE_SIGNAL_PREFIX,
+    DOMAIN,
+    ROLE_UNKNOWN,
     ROLE_UPDATE_SIGNAL,
 )
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 MAC = "a4cf1218f158"
 
 
-logging.getLogger().setLevel(logging.CRITICAL)
-
-
 @pytest.fixture
 def monkey_patched_dispatcher(hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch):
-    """Return a PowersensorMessageDispatcher instance with its dependencies monkey-patched.
+    """Return a PowersensorMessageDispatcher with its dependencies monkey-patched.
 
-    This fixture sets up a dispatcher with a mock dispatcher connect and send function,
-    as well as a mock virtual household. The `async_create_background_task` function on
-    the Home Assistant instance is also patched to create tasks synchronously.
+    Patches async_dispatcher_connect/send so that signals never reach real entities,
+    and makes async_create_background_task synchronous so background work can be
+    awaited in tests via hass.async_block_till_done().
     """
 
     def create_task(coroutine, name=None):
@@ -51,29 +54,24 @@ def monkey_patched_dispatcher(hass: HomeAssistant, monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(
         powersensor_dispatcher_module, "async_dispatcher_send", async_dispatcher_send
     )
+
     vhh = powersensor_dispatcher_module.VirtualHousehold(False)
     entry = Mock()
     entry.data = {CFG_ROLES: {}}
-    dispatcher = powersensor_dispatcher_module.PowersensorMessageDispatcher(
-        hass, entry, vhh, debounce_timeout=2
-    )
-    if not hasattr(dispatcher, "dispatch_send_reference"):
-        object.__setattr__(dispatcher, "dispatch_send_reference", {})
-    dispatcher.dispatch_send_reference = async_dispatcher_send
 
+    dispatcher = powersensor_dispatcher_module.PowersensorMessageDispatcher(
+        hass, entry, vhh, debounce_timeout=1
+    )
+    dispatcher.dispatch_send_reference = async_dispatcher_send
     return dispatcher
 
 
 @pytest.fixture
 def network_info():
-    """Return network information for the Powersensor gateway.
-
-    This fixture provides a dictionary containing the MAC address, IP address,
-    port number, and name of the Powersensor gateway.
-    """
+    """Network information for a Powersensor gateway."""
     return {
         "mac": MAC,
-        "host": ip_address("192.168.0.33"),
+        "host": "192.168.0.33",
         "port": 49476,
         "name": f"Powersensor-gateway-{MAC}-civet._powersensor._udp.local.",
     }
@@ -81,11 +79,7 @@ def network_info():
 
 @pytest.fixture
 def zeroconf_discovery_info():
-    """Return discovery information for the Powersensor gateway via Zeroconf.
-
-    This fixture provides a dictionary containing information about the Powersensor
-    gateway, including its type, name, addresses, port number, and properties.
-    """
+    """Zeroconf discovery payload for a Powersensor gateway."""
     return {
         "type": "_powersensor._udp.local.",
         "name": f"Powersensor-gateway-{MAC}-civet._powersensor._udp.local.",
@@ -100,21 +94,22 @@ def zeroconf_discovery_info():
 
 
 async def follow_normal_add_sequence(dispatcher, network_info):
-    """Simulate adding a plug to Home Assistant via the normal add sequence.
+    """Drive a plug through the full discovery → entity-creation → API handshake.
 
-    This function exercises the `enqueue_plug_for_adding`, `process_plug_queue`,
-    and `_acknowledge_plug_added_to_homeassistant` methods of the dispatcher.
-    It verifies that:
-    - The correct signal is sent when adding a plug.
-    - An API object is created for the added plug.
+    After this helper returns, ``dispatcher.plugs[MAC]`` is populated and the
+    queue is empty.
     """
     assert not dispatcher.plugs
-    await dispatcher.enqueue_plug_for_adding(network_info)
-    await dispatcher.process_plug_queue()
+    dispatcher.enqueue_plug_for_adding(
+        network_info["mac"],
+        network_info["host"],
+        network_info["port"],
+        network_info["name"],
+    )
+    dispatcher.process_plug_queue()
     for _ in range(3):
-        await dispatcher._hass.async_block_till_done()
+        await dispatcher._hass.async_block_till_done(wait_background_tasks=True)
 
-    # check signal was sent to sensors
     dispatcher.dispatch_send_reference.assert_called_once_with(
         dispatcher._hass,
         CREATE_PLUG_SIGNAL,
@@ -124,8 +119,8 @@ async def follow_normal_add_sequence(dispatcher, network_info):
         network_info["name"],
     )
 
-    # if we're at this point the signal should be coming back triggering acknowledge
-    await dispatcher._acknowledge_plug_added_to_homeassistant(
+    # Simulate the sensor platform acknowledging entity creation.
+    dispatcher._acknowledge_plug_added_to_homeassistant(
         network_info["mac"],
         network_info["host"],
         network_info["port"],
@@ -134,74 +129,57 @@ async def follow_normal_add_sequence(dispatcher, network_info):
     for _ in range(3):
         await dispatcher._hass.async_block_till_done()
 
-    # an api object should have been created
     assert MAC in dispatcher.plugs
-    # Think this is a sign that the finally block is not running as expected.
-    # @todo: delete this block here as well after investigation complete
-    if dispatcher._monitor_add_plug_queue is not None:
-        dispatcher._monitor_add_plug_queue.cancel()
-        try:
-            await dispatcher._monitor_add_plug_queue
-        except asyncio.CancelledError:
-            pass
-        finally:
-            dispatcher._monitor_add_plug_queue = None
 
 
 @pytest.mark.asyncio
 async def test_dispatcher_monitor_plug_queue(
     monkeypatch: pytest.MonkeyPatch, monkey_patched_dispatcher, network_info
 ) -> None:
-    """Test the `enqueue_plug_for_adding` and `process_plug_queue` methods of the dispatcher.
+    """Test enqueue_plug_for_adding and _poll_plug_queue.
 
-    This test verifies that:
-    - The correct API object is created when adding a plug.
-    - The queue is properly cleared after adding a plug.
+    Verifies that:
+    - An API object is created for a known plug that is not yet in plugs.
+    - The queue is fully drained after acknowledgement.
     """
     dispatcher = monkey_patched_dispatcher
 
-    # mac address known, but not in plugs
+    # Pre-mark the MAC as known so the queue handler reconnects without creating an entity.
     dispatcher._known_plugs.add(MAC)
 
     assert not dispatcher.plugs
-    await dispatcher.enqueue_plug_for_adding(network_info)
-    await dispatcher.process_plug_queue()
-    for _ in range(3):
-        await dispatcher._hass.async_block_till_done()
-
-    # an api object should have been created
-    assert MAC in dispatcher.plugs
-    # Think this is a sign that the finally block is not running as expected.
-    # @todo: investigate dispatcher plug queue watching task cleanup
-    if dispatcher._monitor_add_plug_queue is not None:
-        dispatcher._monitor_add_plug_queue.cancel()
-        try:
-            await dispatcher._monitor_add_plug_queue
-        except asyncio.CancelledError:
-            pass
-        finally:
-            dispatcher._monitor_add_plug_queue = None
-
-    for _ in range(3):
-        await dispatcher._hass.async_block_till_done()
-    # try to see if queue gets properly cleared
-    await dispatcher.enqueue_plug_for_adding(network_info)
-    await dispatcher.process_plug_queue()
-    for _ in range(3):
-        await dispatcher._hass.async_block_till_done()
+    dispatcher.enqueue_plug_for_adding(
+        network_info["mac"],
+        network_info["host"],
+        network_info["port"],
+        network_info["name"],
+    )
+    dispatcher.process_plug_queue()
+    for _ in range(10):
+        await dispatcher._hass.async_block_till_done(wait_background_tasks=True)
 
     assert MAC in dispatcher.plugs
+
+    # Re-enqueueing a known, connected plug should drain immediately.
+    dispatcher.enqueue_plug_for_adding(
+        network_info["mac"],
+        network_info["host"],
+        network_info["port"],
+        network_info["name"],
+    )
+    dispatcher.process_plug_queue()
+    for _ in range(10):
+        await dispatcher._hass.async_block_till_done(wait_background_tasks=True)
+
+    assert MAC in dispatcher.plugs
+    assert not dispatcher._plug_added_queue
 
 
 @pytest.mark.asyncio
 async def test_dispatcher_monitor_plug_queue_error_handling(
     monkeypatch: pytest.MonkeyPatch, monkey_patched_dispatcher, network_info
 ) -> None:
-    """Test error handling when adding a plug to Home Assistant.
-
-    This test verifies that:
-    - An error does not create an API object in the plugs dictionary.
-    """
+    """Test that an exception in _plug_has_been_seen does not create a stale API entry."""
     dispatcher = monkey_patched_dispatcher
 
     def raise_error(*args, **kwargs):
@@ -209,8 +187,13 @@ async def test_dispatcher_monitor_plug_queue_error_handling(
 
     monkeypatch.setattr(dispatcher, "_plug_has_been_seen", raise_error)
     assert not dispatcher.plugs
-    await dispatcher.enqueue_plug_for_adding(network_info)
-    await dispatcher.process_plug_queue()
+    dispatcher.enqueue_plug_for_adding(
+        network_info["mac"],
+        network_info["host"],
+        network_info["port"],
+        network_info["name"],
+    )
+    dispatcher.process_plug_queue()
     for _ in range(3):
         await dispatcher._hass.async_block_till_done()
     assert not dispatcher.plugs
@@ -220,12 +203,7 @@ async def test_dispatcher_monitor_plug_queue_error_handling(
 async def test_dispatcher_handle_plug_exception(
     monkeypatch: pytest.MonkeyPatch, monkey_patched_dispatcher, network_info
 ) -> None:
-    """Test handling of plug exceptions by the dispatcher.
-
-    This test verifies that:
-    - The `handle_exception` method does not crash when passed an exception.
-    """
-    # for now, I pointlessly verify this does not crash
+    """Test that _handle_exception does not raise."""
     powersensor_dispatcher_module = importlib.import_module(
         "custom_components.powersensor.powersensor_message_dispatcher"
     )
@@ -241,63 +219,56 @@ async def test_dispatcher_removal(
     network_info,
     zeroconf_discovery_info,
 ) -> None:
-    """Test removal of plugs from Home Assistant via the dispatcher.
+    """Test plug removal debounce, cancellation, and stop_pending_removal_tasks.
 
-    This test verifies that:
-    - A plug can be removed when not yet added.
-    - A plug can be removed after being added.
-    - Pending removal tasks can be cancelled and removed.
-    - Interrupting a pending removal task prevents it from completing.
+    Verifies that:
+    - Removal of a never-added plug is silently ignored.
+    - A plug is actually removed after the debounce window.
+    - stop_pending_removal_tasks() prevents a scheduled removal from firing.
+    - _cancel_any_pending_removal() prevents a scheduled removal from firing.
+    - A second _schedule_plug_removal() before the first fires is a no-op.
     """
     dispatcher = monkey_patched_dispatcher
 
-    # test removal of plug not added
-    await dispatcher._schedule_plug_removal(
-        network_info["name"], zeroconf_discovery_info
-    )
+    # Removal request for an unknown plug — nothing should happen.
+    dispatcher._schedule_plug_removal(network_info["name"], zeroconf_discovery_info)
     await asyncio.sleep(dispatcher._debounce_seconds + 1)
     for _ in range(3):
-        await dispatcher._hass.async_block_till_done()
-
-    assert MAC not in dispatcher.plugs
-
-    await follow_normal_add_sequence(dispatcher, network_info)
-
-    await dispatcher._schedule_plug_removal(
-        network_info["name"], zeroconf_discovery_info
-    )
-    await asyncio.sleep(dispatcher._debounce_seconds + 1)
-    for _ in range(3):
-        await dispatcher._hass.async_block_till_done()
+        await dispatcher._hass.async_block_till_done(wait_background_tasks=True)
     assert MAC not in dispatcher.plugs
 
     await follow_normal_add_sequence(dispatcher, network_info)
     assert MAC in dispatcher.plugs
-    await dispatcher._schedule_plug_removal(
-        network_info["name"], zeroconf_discovery_info
-    )
 
+    # Normal removal path: plug should be gone after the debounce expires.
+    dispatcher._schedule_plug_removal(network_info["name"], zeroconf_discovery_info)
+    await asyncio.sleep(dispatcher._debounce_seconds + 1)
+    for _ in range(3):
+        await dispatcher._hass.async_block_till_done()
+    assert MAC not in dispatcher.plugs
+
+    # Interrupted removal: stop_pending_removal_tasks cancels the timer.
+    dispatcher.dispatch_send_reference.reset_mock()
+    dispatcher._known_plugs.discard(MAC)
+    await follow_normal_add_sequence(dispatcher, network_info)
+    assert MAC in dispatcher.plugs
+
+    dispatcher._schedule_plug_removal(network_info["name"], zeroconf_discovery_info)
     await asyncio.sleep(dispatcher._debounce_seconds // 2)
     await dispatcher.stop_pending_removal_tasks()
     await asyncio.sleep(dispatcher._debounce_seconds // 2 + 1)
     for _ in range(3):
         await dispatcher._hass.async_block_till_done()
-    # the removal should not have happened if it was interrupted
     assert MAC in dispatcher.plugs
 
-    # cancel just one mac
-    await dispatcher._schedule_plug_removal(
-        network_info["name"], zeroconf_discovery_info
-    )
-    await dispatcher._schedule_plug_removal(
-        network_info["name"], zeroconf_discovery_info
-    )
+    # Second schedule is a no-op (first already pending).
+    dispatcher._schedule_plug_removal(network_info["name"], zeroconf_discovery_info)
+    dispatcher._schedule_plug_removal(network_info["name"], zeroconf_discovery_info)
     await asyncio.sleep(dispatcher._debounce_seconds // 2)
-    await dispatcher.cancel_any_pending_removal(MAC, "test-cancellation")
+    dispatcher._cancel_any_pending_removal(MAC, "test-cancellation")
     await asyncio.sleep(dispatcher._debounce_seconds // 2 + 1)
     for _ in range(3):
         await dispatcher._hass.async_block_till_done()
-    # the removal should not have happened if it was interrupted
     assert MAC in dispatcher.plugs
 
 
@@ -305,25 +276,30 @@ async def test_dispatcher_removal(
 async def test_dispatcher_handle_relaying_for(
     monkeypatch: pytest.MonkeyPatch, monkey_patched_dispatcher
 ) -> None:
-    """Test handling of relay events by the dispatcher.
+    """Test handle_relaying_for filters and dispatches correctly.
 
-    This test verifies that:
-    - Relay events are ignored when no device type or mac is specified.
-    - Relay events trigger dispatches with the correct signal and arguments.
+    Verifies that:
+    - Messages without a sensor device_type are silently ignored (debug log, not warning).
+      This is normal — plugs relay other plugs at startup.
+    - Messages without a MAC address are silently ignored.
+    - A valid sensor relay sends CREATE_SENSOR_SIGNAL with the correct role.
     """
     dispatcher = monkey_patched_dispatcher
     await dispatcher.handle_relaying_for(
         "test-event", {"mac": None, "device_type": "plug"}
     )
     assert dispatcher.dispatch_send_reference.call_count == 0
+
     await dispatcher.handle_relaying_for(
         "test-event", {"mac": None, "device_type": "sensor"}
     )
     assert dispatcher.dispatch_send_reference.call_count == 0
+
     await dispatcher.handle_relaying_for(
         "test-event", {"mac": MAC, "device_type": "plug"}
     )
     assert dispatcher.dispatch_send_reference.call_count == 0
+
     await dispatcher.handle_relaying_for(
         "test-event", {"mac": MAC, "device_type": "sensor", "role": "house-net"}
     )
@@ -337,11 +313,7 @@ async def test_dispatcher_handle_relaying_for(
 async def test_dispatcher_handle_relaying_for_none_role(
     monkeypatch: pytest.MonkeyPatch, monkey_patched_dispatcher
 ) -> None:
-    """Test handling of relay events by the dispatcher.
-
-    This test verifies that:
-    - A sensor with a missing role is registered without a role
-    """
+    """Test that a sensor relayed with role=None is registered without a role."""
     dispatcher = monkey_patched_dispatcher
     await dispatcher.handle_relaying_for(
         "test-event", {"mac": MAC, "device_type": "sensor", "role": None}
@@ -356,14 +328,10 @@ async def test_dispatcher_handle_relaying_for_none_role(
 async def test_dispatcher_handle_relaying_for_unknown_role(
     monkeypatch: pytest.MonkeyPatch, monkey_patched_dispatcher
 ) -> None:
-    """Test handling of relay events by the dispatcher.
-
-    This test verifies that:
-    - A sensor with unknown role is registered without a role
-    """
+    """Test that role=ROLE_UNKNOWN is normalised to None."""
     dispatcher = monkey_patched_dispatcher
     await dispatcher.handle_relaying_for(
-        "test-event", {"mac": MAC, "device_type": "sensor", "role": "unknown"}
+        "test-event", {"mac": MAC, "device_type": "sensor", "role": ROLE_UNKNOWN}
     )
     assert dispatcher.dispatch_send_reference.call_count == 1
     assert dispatcher.dispatch_send_reference.call_args_list[0] == call(
@@ -375,16 +343,11 @@ async def test_dispatcher_handle_relaying_for_unknown_role(
 async def test_dispatcher_handle_relaying_for_unknown_role_with_stored_role(
     monkeypatch: pytest.MonkeyPatch, monkey_patched_dispatcher
 ) -> None:
-    """Test handling of relay events by the dispatcher.
-
-    This test verifies that:
-    - A sensor with unknown role for which we have a previously configured
-      role gets said configured role applied after creation
-    """
+    """Test that a persisted role is re-applied when the device reports ROLE_UNKNOWN."""
     dispatcher = monkey_patched_dispatcher
     dispatcher._entry.data[CFG_ROLES][MAC] = "house-net"
     await dispatcher.handle_relaying_for(
-        "test-event", {"mac": MAC, "device_type": "sensor", "role": "unknown"}
+        "test-event", {"mac": MAC, "device_type": "sensor", "role": ROLE_UNKNOWN}
     )
     assert dispatcher.dispatch_send_reference.call_count == 2
     assert dispatcher.dispatch_send_reference.call_args_list[0] == call(
@@ -399,15 +362,12 @@ async def test_dispatcher_handle_relaying_for_unknown_role_with_stored_role(
 async def test_dispatcher_handle_message(
     monkeypatch: pytest.MonkeyPatch, monkey_patched_dispatcher
 ) -> None:
-    """Test handling of messages by the dispatcher.
-
-    This test verifies that:
-    - The `handle_message` method sends the correct signals when receiving sensor data.
-    """
+    """Test that handle_message routes signals correctly for average_power and summation_energy."""
     dispatcher = monkey_patched_dispatcher
     role = "house-net"
     event = "average_power"
     message = {"mac": MAC, "device_type": "sensor", "role": role}
+
     await dispatcher.handle_message(event, message)
     assert dispatcher.dispatch_send_reference.call_count == 3
     assert dispatcher.dispatch_send_reference.call_args_list[0] == call(
@@ -415,16 +375,17 @@ async def test_dispatcher_handle_message(
     )
     assert dispatcher.dispatch_send_reference.call_args_list[1] == call(
         dispatcher._hass,
-        DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (MAC, event),
+        f"{DATA_UPDATE_SIGNAL_PREFIX}{MAC}_{event}",
         event,
         message,
     )
     assert dispatcher.dispatch_send_reference.call_args_list[2] == call(
         dispatcher._hass,
-        DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (MAC, "role"),
+        f"{DATA_UPDATE_SIGNAL_PREFIX}{MAC}_role",
         "role",
         {"role": role},
     )
+
     event = "summation_energy"
     await dispatcher.handle_message(event, message)
     assert dispatcher.dispatch_send_reference.call_count == 6
@@ -433,13 +394,13 @@ async def test_dispatcher_handle_message(
     )
     assert dispatcher.dispatch_send_reference.call_args_list[4] == call(
         dispatcher._hass,
-        DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (MAC, event),
+        f"{DATA_UPDATE_SIGNAL_PREFIX}{MAC}_{event}",
         event,
         message,
     )
     assert dispatcher.dispatch_send_reference.call_args_list[5] == call(
         dispatcher._hass,
-        DATA_UPDATE_SIGNAL_FMT_MAC_EVENT % (MAC, "role"),
+        f"{DATA_UPDATE_SIGNAL_PREFIX}{MAC}_role",
         "role",
         {"role": role},
     )
@@ -449,29 +410,21 @@ async def test_dispatcher_handle_message(
 async def test_dispatcher_acknowledge_added_to_homeassistant(
     monkeypatch: pytest.MonkeyPatch, monkey_patched_dispatcher
 ) -> None:
-    """Test acknowledgement of sensors added to Home Assistant by the dispatcher.
-
-    This test verifies that:
-    - The `sensors` dictionary is updated correctly when acknowledging a sensor.
-    """
+    """Test that _acknowledge_sensor_added_to_homeassistant populates sensors correctly."""
     dispatcher = monkey_patched_dispatcher
     dispatcher._acknowledge_sensor_added_to_homeassistant(MAC, "test-role")
-    assert dispatcher.sensors.get(MAC, None) == "test-role"
+    assert dispatcher.sensors.get(MAC) == "test-role"
 
 
 @pytest.mark.asyncio
 async def test_dispatcher_plug_added(
     monkeypatch: pytest.MonkeyPatch, monkey_patched_dispatcher, zeroconf_discovery_info
 ) -> None:
-    """Test adding of plugs by the dispatcher.
-
-    This test verifies that:
-    - The `_plug_added` method can be called multiple times when safe.
-    """
+    """Test that _plug_added can be called multiple times safely."""
     dispatcher = monkey_patched_dispatcher
-    await dispatcher._plug_added(zeroconf_discovery_info)
+    dispatcher._plug_added(zeroconf_discovery_info)
     dispatcher._safe_to_process_plug_queue = True
-    await dispatcher._plug_added(zeroconf_discovery_info)
+    dispatcher._plug_added(zeroconf_discovery_info)
 
 
 @pytest.mark.asyncio
@@ -481,18 +434,19 @@ async def test_dispatcher_plug_updated(
     network_info,
     zeroconf_discovery_info,
 ) -> None:
-    """Test updating of plugs by the dispatcher.
+    """Test _plug_updated handles new, same-address, changed-address, and removed plugs.
 
-    This test verifies that:
-    - The `_plug_updated` method sends the correct signal when a plug is updated.
-    - Plug updates are handled correctly even if the IP address or device has changed.
-    - Plug removals do not trigger an update.
+    Verifies that:
+    - An unknown plug triggers CREATE_PLUG_SIGNAL via the queue.
+    - An update with no IP change is silently ignored.
+    - An update with a different IP reconnects the API.
+    - An update for a plug whose API has already been disconnected re-queues it.
     """
     dispatcher = monkey_patched_dispatcher
-    await dispatcher._plug_updated(zeroconf_discovery_info)
+    dispatcher._plug_updated(zeroconf_discovery_info)
 
     for _ in range(3):
-        await dispatcher._hass.async_block_till_done()
+        await dispatcher._hass.async_block_till_done(wait_background_tasks=True)
 
     dispatcher.dispatch_send_reference.assert_called_once_with(
         dispatcher._hass,
@@ -503,23 +457,119 @@ async def test_dispatcher_plug_updated(
         network_info["name"],
     )
     assert MAC not in dispatcher.plugs
-    await follow_normal_add_sequence(dispatcher, network_info)
-    assert MAC in dispatcher.plugs
 
-    await dispatcher._plug_updated(zeroconf_discovery_info)
-
+    dispatcher._acknowledge_plug_added_to_homeassistant(
+        network_info["mac"],
+        network_info["host"],
+        network_info["port"],
+        network_info["name"],
+    )
     for _ in range(3):
         await dispatcher._hass.async_block_till_done()
+    assert MAC in dispatcher.plugs
 
+    # Same IP/port — should be a no-op.
+    dispatcher._plug_updated(zeroconf_discovery_info)
+    for _ in range(3):
+        await dispatcher._hass.async_block_till_done()
     assert dispatcher.dispatch_send_reference.call_count == 1
     assert MAC in dispatcher.plugs
-    # fake ip mismatch
+
+    # Different IP — should reconnect without sending CREATE_PLUG_SIGNAL.
     dispatcher.plugs[MAC]._listener._ip = ip_address("192.168.0.34")
-    await dispatcher._plug_updated(zeroconf_discovery_info)
+    dispatcher._plug_updated(zeroconf_discovery_info)
     assert dispatcher.dispatch_send_reference.call_count == 1
     dispatcher.plugs[MAC]._listener._ip = ip_address("192.168.0.33")
-    # fake plug removal
+
+    # Plug API has been removed — update should re-queue it.
     assert MAC in dispatcher.plugs
     await dispatcher.plugs[MAC].disconnect()
     del dispatcher.plugs[MAC]
-    await dispatcher._plug_updated(zeroconf_discovery_info)
+    dispatcher._plug_updated(zeroconf_discovery_info)
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_disconnect_with_active_plugs(
+    monkeypatch: pytest.MonkeyPatch, monkey_patched_dispatcher, network_info
+) -> None:
+    """Test that disconnect() cleans up active plug APIs.
+
+    Verifies that:
+    - disconnect() drains the plugs dict even when it contains live API objects.
+    - The unsubscribe callbacks registered during setup are called.
+    """
+    dispatcher = monkey_patched_dispatcher
+
+    await follow_normal_add_sequence(dispatcher, network_info)
+    assert MAC in dispatcher.plugs
+
+    # Register a fake unsubscribe callback so we can verify it is called.
+    unsubscribe = Mock()
+    dispatcher._unsubscribe_from_signals.append(unsubscribe)
+
+    await dispatcher.disconnect()
+
+    assert not dispatcher.plugs
+    unsubscribe.assert_called_once()
+
+
+def test_process_plug_queue_empty_queue_is_noop(
+    monkey_patched_dispatcher,
+) -> None:
+    """Test that process_plug_queue returns immediately when the queue is empty.
+
+    If _plug_added_queue is empty, process_plug_queue returns without sending any signals.
+    """
+    dispatcher = monkey_patched_dispatcher
+
+    assert not dispatcher._plug_added_queue
+    dispatcher.process_plug_queue()
+
+    dispatcher.dispatch_send_reference.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_persist_plug_info_updates_entry_data(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test that _persist_plug_info writes host/port/name/mac into entry.data.
+
+    Lines 268-276 of powersensor_message_dispatcher.py: when the entry is in
+    LOADED state, _persist_plug_info merges the new address into CFG_DEVICES
+    and calls async_update_entry.
+    """
+    powersensor_dispatcher_module = importlib.import_module(
+        "custom_components.powersensor.powersensor_message_dispatcher"
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CFG_DEVICES: {}, CFG_ROLES: {}},
+        entry_id="test_persist",
+        version=PowersensorConfigFlow.VERSION,
+        minor_version=PowersensorConfigFlow.MINOR_VERSION,
+        state=ConfigEntryState.LOADED,
+    )
+
+    update_calls = []
+    monkeypatch.setattr(
+        hass.config_entries,
+        "async_update_entry",
+        lambda entry, **kwargs: update_calls.append(kwargs),
+    )
+
+    vhh = powersensor_dispatcher_module.VirtualHousehold(False)
+    dispatcher = powersensor_dispatcher_module.PowersensorMessageDispatcher(
+        hass, entry, vhh, debounce_timeout=1
+    )
+
+    dispatcher._persist_plug_info(MAC, "10.0.0.1", 49476, "test-plug")
+
+    assert len(update_calls) == 1
+    devices = update_calls[0]["data"][CFG_DEVICES]
+    assert devices[MAC] == {
+        "mac": MAC,
+        "host": "10.0.0.1",
+        "port": 49476,
+        "name": "test-plug",
+    }

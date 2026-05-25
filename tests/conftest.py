@@ -1,16 +1,17 @@
 """Common test fixtures for powersensor Home Assistant integration tests."""
 
-from powersensor_local import PlugListenerUdp
+from unittest.mock import AsyncMock, patch
+
+from powersensor_local import PlugListenerUdp, VirtualHousehold
 import pytest
-import zeroconf
 
 from custom_components.powersensor.config_flow import PowersensorConfigFlow
-from custom_components.powersensor.const import DOMAIN
-import homeassistant.components.zeroconf
+from custom_components.powersensor.const import DOMAIN, ROLE_UNKNOWN
+from custom_components.powersensor.models import PowersensorRuntimeData
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
@@ -28,18 +29,43 @@ def no_powersensor_local(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def no_zeroconf(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Monkeypatch for turning off zeroconf."""
+def no_zeroconf() -> None:
+    """Prevent the zeroconf component from setting up (it opens real sockets).
 
-    async def no_zc(hass: HomeAssistant | None):
-        return None
+    Patches async_setup so the dependency loader considers zeroconf ready
+    without ever touching the network. Also stubs out the two entry-points
+    our integration calls at runtime so individual tests that need finer
+    control can override them via their own monkeypatches.
+    """
+    with (
+        patch(
+            "homeassistant.components.zeroconf.async_setup",
+            return_value=True,
+        ),
+        patch(
+            "homeassistant.components.zeroconf.async_get_instance",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "zeroconf.ServiceBrowser.__init__",
+            return_value=None,
+        ),
+    ):
+        yield
 
-    monkeypatch.setattr(homeassistant.components.zeroconf, "async_get_instance", no_zc)
 
-    def empty_zc_init(self, service_type, listener, _):
-        pass
+class MockDispatcher:
+    """Minimal stand-in for PowersensorMessageDispatcher used in fixtures."""
 
-    monkeypatch.setattr(zeroconf.ServiceBrowser, "__init__", empty_zc_init)
+    def __init__(self) -> None:
+        """Initialize per-instance dispatcher state for test isolation."""
+        self.sensors: dict[str, str | None] = {
+            "c001eat5": "house-net",
+            "cafebabe": "solar",
+            "d3adB33f": None,
+        }
+        self.plugs: dict = {}
+        self.on_start_sensor_queue: dict = {}
 
 
 @pytest.fixture
@@ -57,21 +83,22 @@ def def_config_entry():
                     "port": 49476,
                 }
             },
-            "with_solar": False,
             "roles": {
                 "c001eat5": "house-net",
                 "cafebabe": "solar",
-                "d3adB33f": "<unknown>",
+                "d3adB33f": ROLE_UNKNOWN,
             },
         },
         entry_id="test",
         version=PowersensorConfigFlow.VERSION,
-        minor_version=1,
+        minor_version=PowersensorConfigFlow.MINOR_VERSION,
         state=ConfigEntryState.LOADED,
     )
 
-    class MockDispatcher:
-        sensors = ["c001eat5", "cafebabe", "d3adB33f"]
-
-    entry.runtime_data = {"dispatcher": MockDispatcher()}
+    mock_dispatcher = MockDispatcher()
+    entry.runtime_data = PowersensorRuntimeData(
+        vhh=VirtualHousehold(False),
+        dispatcher=mock_dispatcher,  # type: ignore[arg-type]
+        zeroconf=None,
+    )
     return entry
