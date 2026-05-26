@@ -1,7 +1,7 @@
 """Tests relating to sensor platform setup for the Powersensor integration."""
 
 import importlib
-from typing import Any
+from typing import Any, cast
 from unittest.mock import Mock
 
 from powersensor_local import VirtualHousehold
@@ -33,6 +33,8 @@ from homeassistant.helpers.dispatcher import (
     async_dispatcher_connect,
     async_dispatcher_send,
 )
+from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -469,12 +471,13 @@ async def test_solar_reload_scheduled_when_vhh_has_no_solar(
         reload_calls.append,
     )
 
-    added_entities: list = []
+    added_entities: list[Entity] = []
 
-    def collect_entities(entities: list, *_a: Any, **_kw: Any) -> None:
+    def collect_entities(entities: list[Entity]) -> None:
         added_entities.extend(entities)
 
-    await async_setup_entry(hass, entry, collect_entities)
+    await async_setup_entry(hass, entry, cast(AddConfigEntryEntitiesCallback, collect_entities))
+    await hass.async_block_till_done()
     await hass.async_block_till_done()
 
     # Discover a sensor first so it is not in dispatcher.plugs.

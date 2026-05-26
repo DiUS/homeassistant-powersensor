@@ -6,13 +6,18 @@ the power sensor component works correctly.
 
 import asyncio
 from ipaddress import ip_address
-from unittest.mock import AsyncMock
+from typing import cast
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from homeassistant import config_entries
 import custom_components.powersensor
-from custom_components.powersensor import PowersensorConfigFlow
+from custom_components.powersensor import (
+    PowersensorConfigFlow,
+    PowersensorMessageDispatcher,
+    PowersensorDiscoveryService,
+)
 from custom_components.powersensor.config_flow import get_sensor_display_name
 from custom_components.powersensor.const import (
     DOMAIN,
@@ -497,10 +502,12 @@ async def test_abort_due_to_missing_dispatcher(
 ) -> None:
     """Tests the system's response to missing dispatcher in the runtime data during the configuration step."""
     _old_rd = def_config_entry.runtime_data
+    mock_dispatcher  =Mock()
+    mock_dispatcher.__bool__ = Mock(return_value=False)
     def_config_entry.runtime_data = PowersensorRuntimeData(
         vhh=_old_rd.vhh,
-        dispatcher=None,
-        zeroconf=None,
+        dispatcher=cast(PowersensorMessageDispatcher, mock_dispatcher),
+        zeroconf=Mock(spec=PowersensorDiscoveryService),
     )
 
     # Make the config_flow use our pre-canned entry

@@ -1,5 +1,5 @@
 """Common test fixtures for powersensor Home Assistant integration tests."""
-
+from typing import Any, Generator
 from unittest.mock import AsyncMock, patch
 
 from powersensor_local import PlugListenerUdp, VirtualHousehold
@@ -29,7 +29,7 @@ def no_powersensor_local(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def no_zeroconf() -> None:
+def no_zeroconf() -> Generator[None, Any, None]:
     """Prevent the zeroconf component from setting up (it opens real sockets).
 
     Patches async_setup so the dependency loader considers zeroconf ready

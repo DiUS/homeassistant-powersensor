@@ -30,12 +30,10 @@ MAC = "a4cf1218f158"
 @pytest.fixture
 def hass_data(hass: HomeAssistant):
     """Populate hass.data with the loader keys required by async_setup_component."""
-    hass.data = {
-        DATA_COMPONENTS: {},
-        DATA_INTEGRATIONS: {},
-        DATA_MISSING_PLATFORMS: {},
-        DATA_PRELOAD_PLATFORMS: [],
-    }
+    hass.data[DATA_COMPONENTS] = {}
+    hass.data[DATA_INTEGRATIONS] = {}
+    hass.data[DATA_MISSING_PLATFORMS] = {}
+    hass.data[DATA_PRELOAD_PLATFORMS] = []
 
 
 async def test_async_setup(hass: HomeAssistant, hass_data) -> None:

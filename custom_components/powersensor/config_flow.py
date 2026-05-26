@@ -85,7 +85,7 @@ class PowersensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="cannot_reconfigure")
 
         dispatcher = entry.runtime_data.dispatcher
-        if dispatcher is None:
+        if not dispatcher:
             return self.async_abort(reason="cannot_reconfigure")
 
         mac2name = {

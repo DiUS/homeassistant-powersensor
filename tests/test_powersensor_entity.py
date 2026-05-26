@@ -335,7 +335,7 @@ async def test_powersensor_entity_handle_update(
     assert not entity._has_recently_received_update_message
 
     message = {"summation_joules": 123_456_789}
-    entity._handle_update(None, message)
+    entity._handle_update('None', message)
     assert entity._has_recently_received_update_message
     assert entity.native_value == 123_456_789 / 3_600_000
 
