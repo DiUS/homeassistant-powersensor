@@ -3,10 +3,10 @@
 from dataclasses import dataclass
 
 from powersensor_local import VirtualHousehold
+from powersensor_local.zeroconf_devices import PowersensorZeroconfDevices
 
 from homeassistant.config_entries import ConfigEntry
 
-from .powersensor_discovery_service import PowersensorDiscoveryService
 from .powersensor_message_dispatcher import PowersensorMessageDispatcher
 
 
@@ -36,8 +36,7 @@ class PowersensorRuntimeData:
 
     vhh: VirtualHousehold
     dispatcher: PowersensorMessageDispatcher
-    zeroconf: PowersensorDiscoveryService
-    with_solar: bool = False
+    devices: PowersensorZeroconfDevices
 
 
 type PowersensorConfigEntry = ConfigEntry[PowersensorRuntimeData]

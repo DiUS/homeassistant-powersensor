@@ -1,104 +1,88 @@
-"""Common test fixtures for powersensor Home Assistant integration tests."""
-from typing import Any, Generator
-from unittest.mock import AsyncMock, patch
+"""Common fixtures for powersensor integration tests."""
 
-from powersensor_local import PlugListenerUdp, VirtualHousehold
+from collections.abc import AsyncGenerator, Callable, Coroutine
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from powersensor_local.zeroconf_devices import PowersensorZeroconfDevices
 import pytest
 
 from custom_components.powersensor.config_flow import PowersensorConfigFlow
-from custom_components.powersensor.const import DOMAIN, ROLE_UNKNOWN
-from custom_components.powersensor.models import PowersensorRuntimeData
-from homeassistant.config_entries import ConfigEntryState
+from custom_components.powersensor.const import DOMAIN
+from homeassistant.core import HomeAssistant
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Placeholder fixture that is a no-op for enabling custom integrations."""
 
+def _make_mock_devices() -> MagicMock:
+    """Return a mock PowersensorZeroconfDevices.
 
-@pytest.fixture(autouse=True)
-def no_powersensor_local(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Monkeypatch for UDP listener making 'connect' a no-op safe for testing."""
-
-    def no_connect(self):
-        pass
-
-    monkeypatch.setattr(PlugListenerUdp, "connect", no_connect)
-
-
-@pytest.fixture(autouse=True)
-def no_zeroconf() -> Generator[None, Any, None]:
-    """Prevent the zeroconf component from setting up (it opens real sockets).
-
-    Patches async_setup so the dependency loader considers zeroconf ready
-    without ever touching the network. Also stubs out the two entry-points
-    our integration calls at runtime so individual tests that need finer
-    control can override them via their own monkeypatches.
+    start() captures the callback so tests can inject events directly.
+    The mock never opens real sockets.
     """
-    with (
-        patch(
-            "homeassistant.components.zeroconf.async_setup",
-            return_value=True,
-        ),
-        patch(
-            "homeassistant.components.zeroconf.async_get_instance",
-            new=AsyncMock(return_value=None),
-        ),
-        patch(
-            "zeroconf.ServiceBrowser.__init__",
-            return_value=None,
-        ),
-    ):
-        yield
-
-
-class MockDispatcher:
-    """Minimal stand-in for PowersensorMessageDispatcher used in fixtures."""
-
-    def __init__(self) -> None:
-        """Initialize per-instance dispatcher state for test isolation."""
-        self.sensors: dict[str, str | None] = {
-            "c001eat5": "house-net",
-            "cafebabe": "solar",
-            "d3adB33f": None,
-        }
-        self.plugs: dict = {}
-        self.on_start_sensor_queue: dict = {}
+    devices = MagicMock(spec=PowersensorZeroconfDevices)
+    devices.start = AsyncMock()
+    devices.stop = AsyncMock()
+    devices.subscribe = MagicMock()
+    devices.unsubscribe = MagicMock()
+    return devices
 
 
 @pytest.fixture
-def def_config_entry():
-    """A mock config entry for powersensor integration testing."""
+def mock_devices() -> MagicMock:
+    """Expose mock devices so individual tests can inspect call counts."""
+    return _make_mock_devices()
+
+
+@pytest.fixture
+async def config_entry(
+    hass: HomeAssistant,
+    mock_devices: MagicMock,
+    mock_async_zeroconf: MagicMock,
+) -> AsyncGenerator[MockConfigEntry]:
+    """Set up a powersensor config entry with a mocked library.
+
+    Yields the entry after setup so tests can:
+      - call ``await fire(event_dict)`` to inject library events
+      - assert on hass.states, entity registry, device registry
+      - unload and re-check teardown
+
+    Requesting ``mock_async_zeroconf`` prevents the real zeroconf component
+    from opening any sockets during dependency setup.
+    """
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={
-            "devices": {
-                "0123456789abcd": {
-                    "name": "test-plug",
-                    "display_name": "Test Plug",
-                    "mac": "0123456789abcd",
-                    "host": "192.168.0.33",
-                    "port": 49476,
-                }
-            },
-            "roles": {
-                "c001eat5": "house-net",
-                "cafebabe": "solar",
-                "d3adB33f": ROLE_UNKNOWN,
-            },
-        },
-        entry_id="test",
+        data={"roles": {}},
         version=PowersensorConfigFlow.VERSION,
         minor_version=PowersensorConfigFlow.MINOR_VERSION,
-        state=ConfigEntryState.LOADED,
     )
+    entry.add_to_hass(hass)
 
-    mock_dispatcher = MockDispatcher()
-    entry.runtime_data = PowersensorRuntimeData(
-        vhh=VirtualHousehold(False),
-        dispatcher=mock_dispatcher,  # type: ignore[arg-type]
-        zeroconf=None,
-    )
-    return entry
+    with patch(
+        "custom_components.powersensor.PowersensorZeroconfDevices",
+        return_value=mock_devices,
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        yield entry
+
+
+@pytest.fixture
+def fire(
+    mock_devices: MagicMock,
+) -> Callable[[dict[str, Any]], Coroutine[Any, Any, None]]:
+    """Return an async helper that injects a library event into the integration.
+
+    Usage::
+
+        await fire({"event": "device_found", "mac": "aabbcc112233", "device_type": "plug"})
+    """
+
+    async def _fire(event: dict[str, Any]) -> None:
+        cb = mock_devices.start.call_args[0][0]
+        await cb(event)
+
+    return _fire

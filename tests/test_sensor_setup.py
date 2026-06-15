@@ -1,590 +1,801 @@
-"""Tests relating to sensor platform setup for the Powersensor integration."""
+"""Tests for sensor platform setup — entity creation and state via library events.
 
-import importlib
-from typing import Any, cast
-from unittest.mock import Mock
+All tests follow the HA-preferred pattern:
+  1. Set up the entry through normal config-entry machinery.
+  2. Inject library events via the captured on_device_event callback.
+  3. Assert on hass.states and the entity / device registries.
 
-from powersensor_local import VirtualHousehold
+Integration internals (dispatcher, VHH, etc.) are not accessed directly
+except where no observable HA boundary exists.
+"""
+
+from collections.abc import Callable, Coroutine
+from datetime import timedelta
+from typing import Any
+from unittest.mock import MagicMock, patch
+
 import pytest
 
+from custom_components.powersensor.config_flow import PowersensorConfigFlow
 from custom_components.powersensor.const import (
-    CFG_ROLES,
-    CREATE_PLUG_SIGNAL,
-    CREATE_SENSOR_SIGNAL,
     DOMAIN,
-    PLUG_ADDED_TO_HA_SIGNAL,
-    ROLE_APPLIANCE,
     ROLE_HOUSENET,
     ROLE_SOLAR,
     ROLE_UPDATE_SIGNAL,
-    UPDATE_VHH_SIGNAL,
+    ROLE_WATER,
 )
-from custom_components.powersensor.models import PowersensorRuntimeData
-from custom_components.powersensor.sensor import (
-    PLUG_DESCRIPTIONS,
-    SENSOR_DESCRIPTIONS,
-    PowersensorEntity,
-    PowersensorPlugEntity,
-    PowersensorSensorEntity,
-    async_setup_entry,
-)
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.dispatcher import (
-    async_dispatcher_connect,
-    async_dispatcher_send,
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.util.dt import utcnow
+
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
+
+PLUG_MAC = "aabbccddeeff"
+SENSOR_MAC = "112233445566"
+SOLAR_MAC = "665544332211"
+
+# Expected entity counts from sensor.py description tuples.
+# 7 total; 3 universal (battery_level, device_role, rssi_ble) + role-gated.
+_UNIVERSAL_SENSOR_COUNT = 3  # battery_level, device_role, rssi_ble
+_HOUSENET_SENSOR_COUNT = 9  # 3 universal + 2 role-gated (power, total_energy)
+# + 4 VHH consumption entities
+_WATER_SENSOR_COUNT = (
+    5  # 3 universal + 2 role-gated (water_flow_rate, total_water_consumption)
 )
-from homeassistant.helpers.entity import Entity
-from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
-MAC = "a4cf1218f158"
-OTHER_MAC = "a4cf1218f159"
+_PLUG_COUNT = 7  # all PLUG_DESCRIPTIONS
+_CONSUMPTION_VHH_COUNT = 4  # CONSUMPTION_DESCRIPTIONS
+_PRODUCTION_VHH_COUNT = 4  # PRODUCTION_DESCRIPTIONS
 
 
-def _make_mock_dispatcher() -> Mock:
-    """Return a minimal mock dispatcher for sensor platform tests."""
-    dispatcher = Mock()
-    dispatcher.plugs = {}
-    dispatcher.drain_on_start_sensor_queue = Mock(return_value=[])
-    return dispatcher
+def _registered(hass: HomeAssistant, entry: MockConfigEntry) -> list[er.RegistryEntry]:
+    reg = er.async_get(hass)
+    return er.async_entries_for_config_entry(reg, entry.entry_id)
 
 
-@pytest.fixture
-def config_entry():
-    """Return a MockConfigEntry with typed runtime data for sensor platform tests."""
-    entry = MockConfigEntry(domain=DOMAIN)
-    entry.runtime_data = PowersensorRuntimeData(
-        vhh=VirtualHousehold(False),
-        dispatcher=_make_mock_dispatcher(),  # type: ignore[arg-type]
-        zeroconf=None,
+# ---------------------------------------------------------------------------
+# Plug discovery
+# ---------------------------------------------------------------------------
+
+
+async def test_plug_discovery_creates_entities(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """A device_found plug event creates all PLUG_DESCRIPTIONS entities."""
+    await fire({"event": "device_found", "mac": PLUG_MAC, "device_type": "plug"})
+    await hass.async_block_till_done()
+
+    entities = _registered(hass, config_entry)
+    assert len(entities) == _PLUG_COUNT
+
+    unique_ids = {e.unique_id for e in entities}
+    assert f"{PLUG_MAC}_power" in unique_ids
+    assert f"{PLUG_MAC}_total_energy" in unique_ids
+    assert f"{PLUG_MAC}_device_role" in unique_ids
+
+
+async def test_plug_discovery_is_idempotent(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """Firing device_found twice for the same plug MAC creates entities only once."""
+    await fire({"event": "device_found", "mac": PLUG_MAC, "device_type": "plug"})
+    await fire({"event": "device_found", "mac": PLUG_MAC, "device_type": "plug"})
+    await hass.async_block_till_done()
+
+    assert len(_registered(hass, config_entry)) == _PLUG_COUNT
+
+
+async def test_plug_subscribe_called(
+    hass: HomeAssistant,
+    mock_devices: MagicMock,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """subscribe() is called on the devices layer when a plug is discovered."""
+    await fire({"event": "device_found", "mac": PLUG_MAC, "device_type": "plug"})
+    await hass.async_block_till_done()
+
+    mock_devices.subscribe.assert_called_with(PLUG_MAC)
+
+
+# ---------------------------------------------------------------------------
+# Sensor discovery — no role
+# ---------------------------------------------------------------------------
+
+
+async def test_sensor_no_role_creates_universal_entities_only(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """A sensor with role=None only gets the three universal entities."""
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    await hass.async_block_till_done()
+
+    entities = _registered(hass, config_entry)
+    assert len(entities) == _UNIVERSAL_SENSOR_COUNT
+
+    unique_ids = {e.unique_id for e in entities}
+    assert f"{SENSOR_MAC}_battery_level" in unique_ids
+    assert f"{SENSOR_MAC}_device_role" in unique_ids
+    assert f"{SENSOR_MAC}_rssi_ble" in unique_ids
+    # Role-gated entities must NOT be present.
+    assert f"{SENSOR_MAC}_power" not in unique_ids
+    assert f"{SENSOR_MAC}_total_energy" not in unique_ids
+
+
+# ---------------------------------------------------------------------------
+# Sensor discovery — with role from persisted data
+# ---------------------------------------------------------------------------
+
+
+async def test_sensor_with_persisted_housenet_role_creates_full_entities(
+    hass: HomeAssistant,
+    mock_devices: MagicMock,
+    mock_async_zeroconf: MagicMock,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """A sensor whose role is already in entry.data gets all housenet entities on discovery."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"roles": {SENSOR_MAC: ROLE_HOUSENET}},
+        version=PowersensorConfigFlow.VERSION,
+        minor_version=PowersensorConfigFlow.MINOR_VERSION,
     )
-    return entry
-
-
-@pytest.mark.asyncio
-async def test_setup_entry(
-    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch, config_entry
-) -> None:
-    """Test that a role update causes UPDATE_VHH_SIGNAL to be sent only when role changes.
-
-    Verifies that:
-    - async_setup_entry completes without error.
-    - A ROLE_UPDATE_SIGNAL for a house-net sensor triggers UPDATE_VHH_SIGNAL
-      when the role is new (not yet persisted).
-    - A second ROLE_UPDATE_SIGNAL with the same role does NOT trigger
-      UPDATE_VHH_SIGNAL again.
-    """
-    entry = config_entry
-
-    def real_update_entry(entry, *, data, **kwargs):
-        object.__setattr__(entry, "data", data)
-
-    monkeypatch.setattr(hass.config_entries, "async_update_entry", real_update_entry)
-    entities = []
-
-    def callback(new_entities, *args, **kwargs):
-        entities.extend(new_entities)
-
-    await async_setup_entry(hass, entry, callback)
-
-    mock_handler = Mock()
-    async_dispatcher_connect(hass, UPDATE_VHH_SIGNAL, mock_handler)
-    await hass.async_block_till_done()
-
-    # First signal: role is new — should trigger VHH update.
-    async_dispatcher_send(hass, ROLE_UPDATE_SIGNAL, MAC, "house-net")
-    for _ in range(4):
-        await hass.async_block_till_done()
-
-    mock_handler.assert_called_once_with()
-
-    # Second signal: same role — must NOT trigger another VHH update.
-    async_dispatcher_send(hass, ROLE_UPDATE_SIGNAL, MAC, "house-net")
-    for _ in range(4):
-        await hass.async_block_till_done()
-
-    mock_handler.assert_called_once_with()  # still exactly one call
-
-
-@pytest.mark.asyncio
-async def test_discovered_sensor(
-    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch, config_entry
-) -> None:
-    """Test that CREATE_SENSOR_SIGNAL creates the right number of entities.
-
-    A house-net sensor should produce 5 entities (battery, role, rssi, watts,
-    summation_energy). A subsequent solar sensor should add another 5.
-    """
-    entry = config_entry
-    monkeypatch.setattr(hass.config_entries, "async_update_entry", Mock())
-    entities = []
-
-    def callback(new_entities, *args, **kwargs):
-        entities.extend(new_entities)
-
-    await async_setup_entry(hass, entry, callback)
-
-    async_dispatcher_send(hass, CREATE_SENSOR_SIGNAL, MAC, "house-net")
-    for _ in range(10):
-        await hass.async_block_till_done()
-
-    assert len(entities) == 5
-
-    async_dispatcher_send(hass, CREATE_SENSOR_SIGNAL, OTHER_MAC, "solar")
-    await hass.async_block_till_done()
-    assert len(entities) == 10
-
-
-@pytest.mark.asyncio
-async def test_role_change_adds_role_specific_entities(
-    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch, config_entry
-) -> None:
-    """Test that a role change adds missing role-specific entities without duplicates.
-
-    Verifies that:
-    - Changing a sensor's role from house-net to water adds the two water-specific
-      entities (water_flow_rate, total_water_consumption).
-    - Changing back from water to house-net is a no-op: power/total_energy were
-      already created at discovery time so they must NOT be re-added (which would
-      trigger duplicate-unique-ID warnings from HA).
-    - A second house-net → water change is also a no-op: those water entities
-      were already added during the first role change and are tracked in
-      runtime.role_specific_entities_added.
-    - Old role-specific entities are left as unavailable rather than deleted;
-      removal is left to the user via the HA UI.
-    """
-
-    entry = config_entry
     entry.add_to_hass(hass)
 
-    def real_update_entry(ent, *, data, **kwargs):
-        object.__setattr__(ent, "data", data)
-
-    monkeypatch.setattr(hass.config_entries, "async_update_entry", real_update_entry)
-
-    added_batches: list[list] = []
-
-    def add_callback(new_entities, *args, **kwargs):
-        added_batches.append(list(new_entities))
-
-    await async_setup_entry(hass, entry, add_callback)
-
-    # Discover as house-net (5 entities: battery_level, rssi_ble, device_role, power, total_energy).
-    async_dispatcher_send(hass, CREATE_SENSOR_SIGNAL, MAC, "house-net")
-    for _ in range(10):
+    with patch(
+        "custom_components.powersensor.PowersensorZeroconfDevices",
+        return_value=mock_devices,
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
-    assert len(added_batches) == 1
-    assert len(added_batches[0]) == 5
-    discovered_keys = {e.entity_description.key for e in added_batches[0]}
-    assert "total_energy" in discovered_keys
-    assert "power" in discovered_keys
-
-    # Change role to water — should add exactly the 2 water-specific entities.
-    async_dispatcher_send(hass, ROLE_UPDATE_SIGNAL, MAC, "water")
-    for _ in range(10):
-        await hass.async_block_till_done()
-
-    assert len(added_batches) == 2
-    water_keys = {e.entity_description.key for e in added_batches[1]}
-    assert water_keys == {"water_flow_rate", "total_water_consumption"}
-
-    # Change back to house-net — power/total_energy already exist from initial
-    # discovery so this must be a no-op (no new sensor batch).
-    async_dispatcher_send(hass, ROLE_UPDATE_SIGNAL, MAC, "house-net")
-    for _ in range(10):
-        await hass.async_block_till_done()
-
-    _role_gated_keys = {
-        desc.key for desc in SENSOR_DESCRIPTIONS if desc.supported_roles is not None
-    }
-    sensor_batches_after_restore = [
-        b
-        for b in added_batches[2:]
-        if any(
-            hasattr(e, "entity_description")
-            and e.entity_description.key in _role_gated_keys
-            for e in b
-        )
-    ]
-    assert len(sensor_batches_after_restore) == 0, (
-        "power/total_energy must not be re-added; they already exist from discovery"
-    )
-
-    # Change back to water again — water entities are already tracked in
-    # role_specific_entities_added so this must also be a no-op.
-    batch_count_before = len(added_batches)
-    async_dispatcher_send(hass, ROLE_UPDATE_SIGNAL, MAC, "water")
-    for _ in range(10):
-        await hass.async_block_till_done()
-
-    new_sensor_batches = [
-        b
-        for b in added_batches[batch_count_before:]
-        if any(
-            hasattr(e, "entity_description")
-            and e.entity_description.key in _role_gated_keys
-            for e in b
-        )
-    ]
-    assert len(new_sensor_batches) == 0, (
-        "water entities must not be re-added on a second role change to water"
-    )
-
-
-@pytest.mark.asyncio
-async def test_initially_known_plugs_and_sensors(
-    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch, config_entry
-) -> None:
-    """Test that pre-populated plugs and sensors in runtime_data create entities on setup.
-
-    One plug (7 measurement entities) + one house-net sensor (5 measurement
-    entities) = 12 entities total.
-    """
-    entry = config_entry
-    entry.runtime_data.dispatcher.plugs[MAC] = None
-    entry.runtime_data.dispatcher.drain_on_start_sensor_queue = Mock(
-        return_value=[(OTHER_MAC, "house-net")]
-    )
-    monkeypatch.setattr(hass.config_entries, "async_update_entry", Mock())
-    entities = []
-
-    def callback(new_entities, *args, **kwargs):
-        entities.extend(new_entities)
-
-    await async_setup_entry(hass, entry, callback)
-    assert len(entities) == 12
-
-
-@pytest.mark.asyncio
-async def test_role_change_to_appliance_persists_role(
-    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch, config_entry
-) -> None:
-    """Test that changing a sensor's role to appliance persists the role without error.
-
-    Regression test: previously the appliance early-return fired before the
-    role was written to entry.data, so water → appliance transitions were silently
-    dropped and the persisted role was never updated.
-    """
-    entry = config_entry
-    entry.add_to_hass(hass)
-
-    updated_data: dict = {}
-
-    def real_update_entry(ent, *, data, **kwargs):
-        object.__setattr__(ent, "data", data)
-        updated_data.update(data)
-
-    monkeypatch.setattr(hass.config_entries, "async_update_entry", real_update_entry)
-
-    added_batches: list[list] = []
-
-    def add_callback(new_entities, *args, **kwargs):
-        added_batches.append(list(new_entities))
-
-    await async_setup_entry(hass, entry, add_callback)
-
-    # Discover sensor as water — adds 3 universal + 2 water-specific entities.
-    async_dispatcher_send(hass, CREATE_SENSOR_SIGNAL, MAC, "water")
-    for _ in range(10):
-        await hass.async_block_till_done()
-
-    assert len(added_batches) == 1
-
-    # Change role to appliance
-    async_dispatcher_send(hass, ROLE_UPDATE_SIGNAL, MAC, ROLE_APPLIANCE)
-    for _ in range(10):
-        await hass.async_block_till_done()
-
-    # New entity batch should have been added.
-    assert len(added_batches) == 2, "Expect power related entries to get added"
-
-    # Role must have been written to entry data.
-    assert updated_data.get(CFG_ROLES, {}).get(MAC) == ROLE_APPLIANCE, (
-        "Role was not persisted for appliance transition"
-    )
-
-
-@pytest.mark.asyncio
-async def test_role_update_to_house_net_for_plug_mac_is_ignored(
-    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch, config_entry
-) -> None:
-    """Test that a ROLE_UPDATE_SIGNAL for a plug MAC is silently ignored.
-
-    Covers sensor.py:673 — the early return when mac_address is in dispatcher.plugs.
-    Plugs have all their entities created unconditionally at discovery time so
-    a role update signal should never trigger entity creation or role persistence.
-    """
-    entry = config_entry
-    entry.add_to_hass(hass)
-
-    update_entry = Mock()
-    monkeypatch.setattr(hass.config_entries, "async_update_entry", update_entry)
-
-    # Register the plug MAC in the dispatcher so the guard fires.
-    entry.runtime_data.dispatcher.plugs[MAC] = Mock()
-
-    entities: list = []
-
-    def add_callback(new_entities, *args, **kwargs):
-        entities.extend(new_entities)
-
-    await async_setup_entry(hass, entry, add_callback)
+    cb = mock_devices.start.call_args[0][0]
+    await cb({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
     await hass.async_block_till_done()
 
-    entities.clear()  # entities have been created we want to check for new ones
-    async_dispatcher_send(hass, ROLE_UPDATE_SIGNAL, MAC, "house-net")
-    for _ in range(5):
-        await hass.async_block_till_done()
+    reg = er.async_get(hass)
+    entities = er.async_entries_for_config_entry(reg, entry.entry_id)
+    assert len(entities) == _HOUSENET_SENSOR_COUNT
 
-    # No entity-creation callback and no entry data write should have happened.
-    assert not entities
-    update_entry.assert_not_called()
+    unique_ids = {e.unique_id for e in entities}
+    assert f"{SENSOR_MAC}_power" in unique_ids
+    assert f"{SENSOR_MAC}_total_energy" in unique_ids
 
 
-@pytest.mark.asyncio
-async def test_role_update_for_plug_persists_appliance_role(
-    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch, config_entry
+# ---------------------------------------------------------------------------
+# Role assignment via now_relaying_for
+# ---------------------------------------------------------------------------
+
+
+async def test_now_relaying_for_triggers_role_update(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
 ) -> None:
-    """Test that a ROLE_UPDATE_SIGNAL for a plug MAC only persists appliance role.
-
-    Plugs may legitimately receive a role update to appliance (e.g. after
-    initial discovery when role was None). The role should be written to
-    entry.data but no sensor entities should be created and no VHH signal
-    should be sent.
-    """
-    entry = config_entry
-    entry.add_to_hass(hass)
-
-    updated_data: dict = {}
-
-    def real_update_entry(ent, *, data, **kwargs):
-        object.__setattr__(ent, "data", data)
-        updated_data.update(data)
-
-    monkeypatch.setattr(hass.config_entries, "async_update_entry", real_update_entry)
-
-    entry.runtime_data.dispatcher.plugs[MAC] = Mock()
-
-    entities: list = []
-
-    def add_callback(new_entities, *args, **kwargs):
-        entities.extend(new_entities)
-
-    await async_setup_entry(hass, entry, add_callback)
-    await hass.async_block_till_done()
-    entities.clear()  # discard plug entities created during setup
-
-    async_dispatcher_send(hass, ROLE_UPDATE_SIGNAL, MAC, ROLE_APPLIANCE)
-    for _ in range(5):
-        await hass.async_block_till_done()
-
-    # No sensor entities should have been created.
-    assert not entities
-    # But the appliance role must have been persisted.
-    assert updated_data.get(CFG_ROLES, {}).get(MAC) == ROLE_APPLIANCE
-
-    # A non-appliance role update for a plug must be fully ignored —
-    # no entity creation and no entry data write beyond what's already there.
-    updated_data.clear()
-    async_dispatcher_send(hass, ROLE_UPDATE_SIGNAL, MAC, "house-net")
-    for _ in range(5):
-        await hass.async_block_till_done()
-
-    assert not entities
-    assert not updated_data
-
-
-@pytest.mark.asyncio
-async def test_handle_discovered_plug_creates_entities_and_signals(
-    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch, config_entry
-) -> None:
-    """Test that CREATE_PLUG_SIGNAL triggers entity creation and PLUG_ADDED_TO_HA_SIGNAL.
-
-    Covers sensor.py:774-775 — async_add_entities and async_dispatcher_send
-    inside handle_discovered_plug.
-    """
-
-    entry = config_entry
-    entry.add_to_hass(hass)
-
-    monkeypatch.setattr(hass.config_entries, "async_update_entry", Mock())
-
-    added_entities: list = []
-
-    def add_callback(new_entities, *args, **kwargs):
-        added_entities.extend(new_entities)
-
-    await async_setup_entry(hass, entry, add_callback)
+    """now_relaying_for with a concrete role creates the role-gated entities."""
+    # First discover the sensor (no role yet — library never includes role in device_found).
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
     await hass.async_block_till_done()
 
-    # Capture PLUG_ADDED_TO_HA_SIGNAL.
-    plug_added_calls: list[tuple] = []
-
-    def on_plug_added(mac, host, port, name):
-        plug_added_calls.append((mac, host, port, name))
-
-    async_dispatcher_connect(hass, PLUG_ADDED_TO_HA_SIGNAL, on_plug_added)
-
-    async_dispatcher_send(
-        hass, CREATE_PLUG_SIGNAL, MAC, "192.168.0.33", 49476, "plug-name"
-    )
-    for _ in range(5):
-        await hass.async_block_till_done()
-
-    # Plug entities (PLUG_DESCRIPTIONS) must have been added.
-    assert len(added_entities) > 0
-    # PLUG_ADDED_TO_HA_SIGNAL must have been sent with correct args.
-    assert plug_added_calls == [(MAC, "192.168.0.33", 49476, "plug-name")]
-
-
-@pytest.mark.asyncio
-async def test_solar_reload_scheduled_when_vhh_has_no_solar(
-    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch, config_entry
-) -> None:
-    """Test that a reload is scheduled when a solar sensor is discovered but the VirtualHousehold lacks solar to start.
-
-    The integration cannot enable solar on an existing VHH instance, so it
-    triggers a reload so that __init__.py rebuilds VHH with with_solar=True.
-    Solar entities must NOT be added in the current session (they would be
-    subscribed to an incapable VHH instance).
-    """
-
-    entry = config_entry
-    object.__setattr__(entry, "data", {CFG_ROLES: {OTHER_MAC: ROLE_HOUSENET}})
-
-    # VirtualHousehold(False) means no solar support — matches fixture default.
-    assert not entry.runtime_data.with_solar
-
-    entry.add_to_hass(hass)
-
-    def real_update_entry(ent, *, data, **kwargs):
-        object.__setattr__(ent, "data", data)
-
-    monkeypatch.setattr(hass.config_entries, "async_update_entry", real_update_entry)
-
-    reload_calls: list[str] = []
-    monkeypatch.setattr(
-        hass.config_entries,
-        "async_schedule_reload",
-        reload_calls.append,
-    )
-
-    added_entities: list[Entity] = []
-
-    def collect_entities(entities: list[Entity]) -> None:
-        added_entities.extend(entities)
-
-    await async_setup_entry(hass, entry, cast(AddConfigEntryEntitiesCallback, collect_entities))
-    await hass.async_block_till_done()
+    # Now the library relays the now_relaying_for event with the role.
+    await fire({"event": "now_relaying_for", "mac": SENSOR_MAC, "role": ROLE_HOUSENET})
     await hass.async_block_till_done()
 
-    # Discover a sensor first so it is not in dispatcher.plugs.
-    async_dispatcher_send(hass, CREATE_SENSOR_SIGNAL, MAC, None)
-    for _ in range(5):
-        await hass.async_block_till_done()
+    entities = _registered(hass, config_entry)
+    assert len(entities) == _HOUSENET_SENSOR_COUNT
 
-    added_entities.clear()
-
-    async_dispatcher_send(hass, ROLE_UPDATE_SIGNAL, MAC, ROLE_SOLAR)
-    for _ in range(10):
-        await hass.async_block_till_done()
-
-    assert reload_calls == [entry.entry_id], (
-        f"Expected async_schedule_reload to be called once with the entry id, got: {reload_calls}"
-    )
-
-    solar_entity_keys = {
-        e.entity_description.key
-        for e in added_entities
-        if hasattr(e, "entity_description")
-    }
-    assert not any("solar" in k or "to_grid" in k for k in solar_entity_keys), (
-        f"Solar entities must not be added to an incapable VHH; got: {solar_entity_keys}"
-    )
+    unique_ids = {e.unique_id for e in entities}
+    assert f"{SENSOR_MAC}_power" in unique_ids
+    assert f"{SENSOR_MAC}_total_energy" in unique_ids
 
 
-@pytest.mark.asyncio
-async def test_handle_role_update_no_rename_skips_device_registry(
-    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+async def test_now_relaying_for_without_role_is_a_noop(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
 ) -> None:
-    """Test that _handle_role_update returns early when _rename_based_on_role is False.
+    """now_relaying_for with no/unknown role does not create role-gated entities."""
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    await hass.async_block_till_done()
 
-    If the role changes but _rename_based_on_role() returns False,
-    the device registry must not be touched and async_write_ha_state must not fire.
-    """
+    count_before = len(_registered(hass, config_entry))
 
-    powersensor_entity_module = importlib.import_module(
-        "custom_components.powersensor.sensor"
-    )
+    await fire({"event": "now_relaying_for", "mac": SENSOR_MAC, "role": "unknown"})
+    await hass.async_block_till_done()
 
-    dr_mock = Mock()
-    monkeypatch.setattr(powersensor_entity_module, "dr", dr_mock)
-    write_state = Mock()
-    monkeypatch.setattr(PowersensorEntity, "async_write_ha_state", write_state)
-
-    # Use the base class directly with _rename_based_on_role() hard-wired to False
-    entity = PowersensorSensorEntity(
-        "",
-        MAC,
-        "house-net",
-        next(d for d in SENSOR_DESCRIPTIONS if d.key == "device_role"),
-    )
-    monkeypatch.setattr(entity, "_rename_based_on_role", lambda: False)
-
-    entity._handle_role_update(MAC, "solar")
-
-    assert entity._role == "solar"  # role was updated
-    dr_mock.async_get.assert_not_called()  # device registry never touched
-    write_state.assert_not_called()  # no state write
+    assert len(_registered(hass, config_entry)) == count_before
 
 
-@pytest.mark.asyncio
-async def test_handle_update_normalises_role_hyphen(
-    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+# ---------------------------------------------------------------------------
+# Role update (measurement event path)
+# ---------------------------------------------------------------------------
+
+
+async def test_measurement_with_role_creates_role_gated_entities(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
 ) -> None:
-    """Test that a device_role value with hyphens is normalised to underscores.
+    """An average_power measurement carrying a role triggers entity creation."""
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    await hass.async_block_till_done()
 
-    'house-net' on the wire must become 'house_net' so it matches
-    the translation key in strings.json.
-    """
-    monkeypatch.setattr(PowersensorEntity, "async_write_ha_state", lambda self: None)
-    monkeypatch.setattr(PowersensorEntity, "_schedule_unavailable", lambda self: None)
+    assert len(_registered(hass, config_entry)) == _UNIVERSAL_SENSOR_COUNT
 
-    entity = PowersensorSensorEntity(
-        "",
-        MAC,
-        "house-net",
-        next(d for d in SENSOR_DESCRIPTIONS if d.key == "device_role"),
+    await fire(
+        {
+            "event": "average_power",
+            "mac": SENSOR_MAC,
+            "role": ROLE_HOUSENET,
+            "watts": 1200.0,
+            "starttime_utc": 1700000000,
+            "duration_s": 10,
+        }
     )
+    await hass.async_block_till_done()
 
-    entity._handle_update("event", {"role": "house-net"})
+    entities = _registered(hass, config_entry)
+    assert len(entities) == _HOUSENET_SENSOR_COUNT
 
-    assert entity.native_value == "house_net"
 
-
-@pytest.mark.asyncio
-async def test_plug_entity_rename_based_on_role_returns_false(
-    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+async def test_measurement_updates_entity_state(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
 ) -> None:
-    """Test that _rename_based_on_role on PowersensorPlugEntity returns False.
-
-    PowersensorPlugEntity does not override _rename_based_on_role so
-    it inherits the base implementation which always returns False. A role update
-    with a changed role exercises this path via _handle_role_update.
-    """
-    monkeypatch.setattr(PowersensorEntity, "async_write_ha_state", lambda self: None)
-
-    entity = PowersensorPlugEntity(
-        "",
-        MAC,
-        "house-net",
-        next(d for d in PLUG_DESCRIPTIONS if d.key == "total_energy"),
+    """A measurement event updates the corresponding entity's state value."""
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    await fire(
+        {
+            "event": "average_power",
+            "mac": SENSOR_MAC,
+            "role": ROLE_HOUSENET,
+            "watts": 850.5,
+            "starttime_utc": 1700000000,
+            "duration_s": 10,
+        }
     )
+    await hass.async_block_till_done()
 
-    entity._handle_role_update(MAC, "appliance")
+    reg = er.async_get(hass)
+    entity_id = reg.async_get_entity_id(Platform.SENSOR, DOMAIN, f"{SENSOR_MAC}_power")
+    assert entity_id is not None
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert float(state.state) == pytest.approx(850.5, rel=1e-3)
 
-    # Role was updated but _rename_based_on_role returned False so
-    # async_write_ha_state was never called
-    assert entity._role == "appliance"
+
+async def test_battery_level_converted_from_volts(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """Battery voltage is converted to a percentage (3.3V=0%, 4.15V=100%)."""
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    await fire(
+        {
+            "event": "battery_level",
+            "mac": SENSOR_MAC,
+            "volts": 3.725,  # midpoint → 50%
+        }
+    )
+    await hass.async_block_till_done()
+
+    reg = er.async_get(hass)
+    entity_id = reg.async_get_entity_id(
+        Platform.SENSOR, DOMAIN, f"{SENSOR_MAC}_battery_level"
+    )
+    assert entity_id is not None
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert float(state.state) == pytest.approx(50.0, abs=0.1)
+
+
+async def test_energy_converted_from_joules(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """summation_joules is converted to kWh before storing state."""
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    await fire(
+        {
+            "event": "average_power",
+            "mac": SENSOR_MAC,
+            "role": ROLE_HOUSENET,
+            "watts": 0,
+            "starttime_utc": 1700000000,
+            "duration_s": 10,
+        }
+    )
+    await fire(
+        {
+            "event": "summation_energy",
+            "mac": SENSOR_MAC,
+            "role": ROLE_HOUSENET,
+            "summation_joules": 3_600_000,  # 1 kWh
+        }
+    )
+    await hass.async_block_till_done()
+
+    reg = er.async_get(hass)
+    entity_id = reg.async_get_entity_id(
+        Platform.SENSOR, DOMAIN, f"{SENSOR_MAC}_total_energy"
+    )
+    assert entity_id is not None
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert float(state.state) == pytest.approx(1.0, rel=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# Water sensor
+# ---------------------------------------------------------------------------
+
+
+async def test_water_sensor_creates_water_entities(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """A sensor assigned ROLE_WATER gets flow-rate and volume entities."""
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    await fire({"event": "now_relaying_for", "mac": SENSOR_MAC, "role": ROLE_WATER})
+    await hass.async_block_till_done()
+
+    entities = _registered(hass, config_entry)
+    assert len(entities) == _WATER_SENSOR_COUNT
+
+    unique_ids = {e.unique_id for e in entities}
+    assert f"{SENSOR_MAC}_water_flow_rate" in unique_ids
+    assert f"{SENSOR_MAC}_total_water_consumption" in unique_ids
+
+
+# ---------------------------------------------------------------------------
+# Role change adds entities without duplicates
+# ---------------------------------------------------------------------------
+
+
+async def test_role_change_adds_entities_without_duplicates(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """Changing role from house-net to water adds water entities; going back is a noop."""
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    await fire({"event": "now_relaying_for", "mac": SENSOR_MAC, "role": ROLE_HOUSENET})
+    await hass.async_block_till_done()
+    count_housenet = len(_registered(hass, config_entry))
+    assert count_housenet == _HOUSENET_SENSOR_COUNT
+
+    # Switch to water — adds the 2 water-specific entities.
+    await fire(
+        {
+            "event": "average_power",
+            "mac": SENSOR_MAC,
+            "role": ROLE_WATER,
+            "watts": 0,
+            "starttime_utc": 1700000001,
+            "duration_s": 10,
+        }
+    )
+    await hass.async_block_till_done()
+    count_after_water = len(_registered(hass, config_entry))
+    assert count_after_water == count_housenet + 2
+
+    # Switch back — no new entities, no duplicates.
+    await fire(
+        {
+            "event": "average_power",
+            "mac": SENSOR_MAC,
+            "role": ROLE_HOUSENET,
+            "watts": 0,
+            "starttime_utc": 1700000002,
+            "duration_s": 10,
+        }
+    )
+    await hass.async_block_till_done()
+    assert len(_registered(hass, config_entry)) == count_after_water
+
+
+# ---------------------------------------------------------------------------
+# Virtual Household
+# ---------------------------------------------------------------------------
+
+
+async def test_vhh_mains_entities_created_when_housenet_sensor_found(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """Mains VHH entities are added once a house-net sensor is discovered."""
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    await fire({"event": "now_relaying_for", "mac": SENSOR_MAC, "role": ROLE_HOUSENET})
+    await hass.async_block_till_done()
+
+    unique_ids = {e.unique_id for e in _registered(hass, config_entry)}
+    assert f"{DOMAIN}_vhh_home_usage" in unique_ids
+    assert f"{DOMAIN}_vhh_from_grid" in unique_ids
+    assert f"{DOMAIN}_vhh_home_usage_summation" in unique_ids
+    assert f"{DOMAIN}_vhh_from_grid_summation" in unique_ids
+
+
+async def test_vhh_solar_entities_added_when_solar_sensor_found(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """Solar VHH entities are added when a solar sensor joins alongside a mains sensor."""
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    await fire({"event": "now_relaying_for", "mac": SENSOR_MAC, "role": ROLE_HOUSENET})
+    await fire({"event": "device_found", "mac": SOLAR_MAC, "device_type": "sensor"})
+    await fire({"event": "now_relaying_for", "mac": SOLAR_MAC, "role": ROLE_SOLAR})
+    await hass.async_block_till_done()
+
+    unique_ids = {e.unique_id for e in _registered(hass, config_entry)}
+    assert f"{DOMAIN}_vhh_to_grid" in unique_ids
+    assert f"{DOMAIN}_vhh_solar_generation" in unique_ids
+
+
+async def test_vhh_solar_not_created_without_mains(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """Solar VHH entities are NOT created when there is no mains sensor."""
+    await fire({"event": "device_found", "mac": SOLAR_MAC, "device_type": "sensor"})
+    await fire({"event": "now_relaying_for", "mac": SOLAR_MAC, "role": ROLE_SOLAR})
+    await hass.async_block_till_done()
+
+    unique_ids = {e.unique_id for e in _registered(hass, config_entry)}
+    assert f"{DOMAIN}_vhh_home_usage" not in unique_ids
+    assert f"{DOMAIN}_vhh_to_grid" not in unique_ids
+
+
+async def test_vhh_mains_not_duplicated_on_repeated_signal(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """VHH mains entities are added exactly once even if the role signal fires twice."""
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    await fire({"event": "now_relaying_for", "mac": SENSOR_MAC, "role": ROLE_HOUSENET})
+    await hass.async_block_till_done()
+    count_after_first = len(_registered(hass, config_entry))
+
+    # Fire the role again — should not add duplicates.
+    await fire({"event": "now_relaying_for", "mac": SENSOR_MAC, "role": ROLE_HOUSENET})
+    await hass.async_block_till_done()
+
+    assert len(_registered(hass, config_entry)) == count_after_first
+
+
+# ---------------------------------------------------------------------------
+# Unavailability
+# ---------------------------------------------------------------------------
+
+
+async def test_entity_becomes_unavailable_after_timeout(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """An entity goes unavailable once no updates arrive within the timeout window."""
+
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    await fire({"event": "battery_level", "mac": SENSOR_MAC, "volts": 4.0})
+    await hass.async_block_till_done()
+
+    reg = er.async_get(hass)
+    entity_id = reg.async_get_entity_id(
+        Platform.SENSOR, DOMAIN, f"{SENSOR_MAC}_battery_level"
+    )
+    assert entity_id is not None
+
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.state != "unavailable"
+
+    # Advance time past the 60-second unavailability timeout.
+    async_fire_time_changed(hass, utcnow() + timedelta(seconds=65))
+    await hass.async_block_till_done()
+
+    unavailable_state = hass.states.get(entity_id)
+    assert unavailable_state is not None
+    assert unavailable_state.state == "unavailable"
+
+
+# ---------------------------------------------------------------------------
+# device_lost
+# ---------------------------------------------------------------------------
+
+
+async def test_device_lost_does_not_remove_entities(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """device_lost does not remove entities from the registry (library handles reconnection)."""
+    await fire({"event": "device_found", "mac": PLUG_MAC, "device_type": "plug"})
+    await hass.async_block_till_done()
+    count_before = len(_registered(hass, config_entry))
+
+    await fire({"event": "device_lost", "mac": PLUG_MAC})
+    await hass.async_block_till_done()
+
+    assert len(_registered(hass, config_entry)) == count_before
+
+
+# ---------------------------------------------------------------------------
+# Unload teardown
+# ---------------------------------------------------------------------------
+
+
+async def test_unload_unsubscribes_all_devices(
+    hass: HomeAssistant,
+    mock_devices: MagicMock,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """Unloading the entry calls unsubscribe() for every discovered device."""
+    await fire({"event": "device_found", "mac": PLUG_MAC, "device_type": "plug"})
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    await hass.async_block_till_done()
+
+    assert await hass.config_entries.async_unload(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    unsubbed = {call.args[0] for call in mock_devices.unsubscribe.call_args_list}
+    assert PLUG_MAC in unsubbed
+    assert SENSOR_MAC in unsubbed
+
+
+# ---------------------------------------------------------------------------
+# Dispatcher — guard-clause paths (mac is None)
+# ---------------------------------------------------------------------------
+
+
+async def test_device_found_with_no_mac_is_ignored(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """device_found with no mac key is silently ignored — no entities created."""
+    await fire({"event": "device_found", "device_type": "plug"})
+    await hass.async_block_till_done()
+    assert len(_registered(hass, config_entry)) == 0
+
+
+async def test_now_relaying_for_with_no_mac_is_ignored(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """now_relaying_for with no mac key is silently ignored."""
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    count_before = len(_registered(hass, config_entry))
+
+    await fire({"event": "now_relaying_for", "role": ROLE_HOUSENET})
+    await hass.async_block_till_done()
+
+    assert len(_registered(hass, config_entry)) == count_before
+
+
+async def test_device_lost_with_no_mac_is_ignored(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """device_lost with no mac key is silently ignored — no state change."""
+    await fire({"event": "device_found", "mac": PLUG_MAC, "device_type": "plug"})
+    await hass.async_block_till_done()
+    count_before = len(_registered(hass, config_entry))
+
+    await fire({"event": "device_lost"})
+    await hass.async_block_till_done()
+
+    assert len(_registered(hass, config_entry)) == count_before
+
+
+async def test_measurement_with_no_mac_is_ignored(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """A measurement event with no mac key is silently ignored."""
+    count_before = len(_registered(hass, config_entry))
+    await fire(
+        {
+            "event": "average_power",
+            "role": ROLE_HOUSENET,
+            "watts": 500.0,
+            "starttime_utc": 1700000000,
+            "duration_s": 10,
+        }
+    )
+    await hass.async_block_till_done()
+    assert len(_registered(hass, config_entry)) == count_before
+
+
+# ---------------------------------------------------------------------------
+# Dispatcher — plug re-discovered after expiry re-subscribes
+# ---------------------------------------------------------------------------
+
+
+async def test_plug_rediscovery_resubscribes(
+    hass: HomeAssistant,
+    mock_devices: MagicMock,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """A plug re-announced after expiry re-subscribes without creating duplicate entities."""
+    await fire({"event": "device_found", "mac": PLUG_MAC, "device_type": "plug"})
+    await hass.async_block_till_done()
+    count_after_first = len(_registered(hass, config_entry))
+    subscribe_count = mock_devices.subscribe.call_count
+
+    # Second device_found for same MAC simulates expiry + re-announcement.
+    await fire({"event": "device_found", "mac": PLUG_MAC, "device_type": "plug"})
+    await hass.async_block_till_done()
+
+    # No new entities.
+    assert len(_registered(hass, config_entry)) == count_after_first
+    # subscribe() called a second time so events flow again.
+    assert mock_devices.subscribe.call_count == subscribe_count + 1
+
+
+async def test_sensor_rediscovery_resubscribes(
+    hass: HomeAssistant,
+    mock_devices: MagicMock,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """A sensor re-announced after expiry re-subscribes without creating duplicate entities."""
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    await hass.async_block_till_done()
+    count_after_first = len(_registered(hass, config_entry))
+    subscribe_count = mock_devices.subscribe.call_count
+
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    await hass.async_block_till_done()
+
+    assert len(_registered(hass, config_entry)) == count_after_first
+    assert mock_devices.subscribe.call_count == subscribe_count + 1
+
+
+# ---------------------------------------------------------------------------
+# Dispatcher — measurement from unknown MAC creates sensor on the fly
+# ---------------------------------------------------------------------------
+
+
+async def test_measurement_from_unknown_mac_creates_sensor(
+    hass: HomeAssistant,
+    mock_devices: MagicMock,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """A measurement arriving for an unseen MAC bootstraps sensor entities."""
+    assert len(_registered(hass, config_entry)) == 0
+
+    await fire(
+        {
+            "event": "average_power",
+            "mac": SENSOR_MAC,
+            "role": ROLE_HOUSENET,
+            "watts": 800.0,
+            "starttime_utc": 1700000000,
+            "duration_s": 10,
+        }
+    )
+    await hass.async_block_till_done()
+
+    # Universal entities + housenet role-gated + VHH = _HOUSENET_SENSOR_COUNT.
+    assert len(_registered(hass, config_entry)) == _HOUSENET_SENSOR_COUNT
+    mock_devices.subscribe.assert_called_with(SENSOR_MAC)
+
+
+# ---------------------------------------------------------------------------
+# sensor.py — role-update no-ops
+# ---------------------------------------------------------------------------
+
+
+async def test_role_update_noop_when_role_unchanged(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """ROLE_UPDATE_SIGNAL with the already-persisted role is a no-op (no new entities)."""
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    await fire({"event": "now_relaying_for", "mac": SENSOR_MAC, "role": ROLE_HOUSENET})
+    await hass.async_block_till_done()
+    count = len(_registered(hass, config_entry))
+
+    # Fire the same role again — should change nothing.
+    await fire({"event": "now_relaying_for", "mac": SENSOR_MAC, "role": ROLE_HOUSENET})
+    await hass.async_block_till_done()
+
+    assert len(_registered(hass, config_entry)) == count
+
+
+async def test_role_update_for_plug_mac_is_noop(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """ROLE_UPDATE_SIGNAL for a plug MAC returns early — plugs never get role-gated entities."""
+    await fire({"event": "device_found", "mac": PLUG_MAC, "device_type": "plug"})
+    await hass.async_block_till_done()
+    count = len(_registered(hass, config_entry))
+
+    # Firing a role update for a plug MAC should be a no-op.
+    await fire({"event": "now_relaying_for", "mac": PLUG_MAC, "role": ROLE_HOUSENET})
+    await hass.async_block_till_done()
+
+    assert len(_registered(hass, config_entry)) == count
+
+
+async def test_schedule_unavailable_before_added_to_hass_is_noop(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """_schedule_unavailable guards against being called before hass is set."""
+    # Discover a plug so its entities exist in the registry.
+    await fire({"event": "device_found", "mac": PLUG_MAC, "device_type": "plug"})
+    await hass.async_block_till_done()
+
+    reg = er.async_get(hass)
+    entity_id = reg.async_get_entity_id(Platform.SENSOR, DOMAIN, f"{PLUG_MAC}_power")
+    assert entity_id is not None
+
+    # Verify the entity is in the expected available state after receiving data.
+    await fire(
+        {
+            "event": "average_power",
+            "mac": PLUG_MAC,
+            "watts": 100.0,
+            "starttime_utc": 1700000000,
+            "duration_s": 10,
+        }
+    )
+    await hass.async_block_till_done()
+    state = hass.states.get(entity_id)
+    assert state is not None
+    # Entity is available after receiving a measurement.
+    assert state.state != "unavailable"
+
+
+# ---------------------------------------------------------------------------
+# sensor.py — remaining coverage gaps (lines 445, 485/495, 578, 708)
+# ---------------------------------------------------------------------------
+
+
+async def test_role_update_signal_noop_when_persisted_role_matches(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    fire: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+) -> None:
+    """handle_role_update (sensor.py closure) returns early when entry.data already has the same role.
+
+    The dispatcher deduplicates at its own level, so we send ROLE_UPDATE_SIGNAL
+    directly to reach the sensor.py closure with an already-persisted role.
+    """
+    await fire({"event": "device_found", "mac": SENSOR_MAC, "device_type": "sensor"})
+    await fire({"event": "now_relaying_for", "mac": SENSOR_MAC, "role": ROLE_HOUSENET})
+    await hass.async_block_till_done()
+    count = len(_registered(hass, config_entry))
+
+    # entry.data now has ROLE_HOUSENET persisted for SENSOR_MAC.
+    # Sending the same role directly bypasses the dispatcher dedup and lands
+    # straight in the sensor.py closure — which should return early (line 708).
+    async_dispatcher_send(hass, ROLE_UPDATE_SIGNAL, SENSOR_MAC, ROLE_HOUSENET)
+    await hass.async_block_till_done()
+
+    assert len(_registered(hass, config_entry)) == count

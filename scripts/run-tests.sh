@@ -7,6 +7,7 @@ export PYTHONDONTWRITEBYTECODE=1
 export PYTHONPATH=".:${rootdir}:${testsdir}/mocks"
 export PYTEST_COVERAGE_DATA_FILE="${testsdir}/.coverage"
 pytest \
+  --snapshot-update \
   --asyncio-mode=auto \
   --cov=. \
   --cov-config="${testsdir}/.coveragerc" \

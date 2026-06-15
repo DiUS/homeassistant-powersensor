@@ -1,9 +1,7 @@
 {
   "config": {
     "abort": {
-      "already_configured": "Device is already configured",
       "already_in_progress": "Configuration is already in progress.",
-      "cannot_connect": "Failed to connect",
       "cannot_reconfigure": "Cannot reconfigure. Initial configuration incomplete or broken.",
       "firmware_not_compatible": "Plug firmware not compatible",
       "roles_applied": "Roles successfully applied!",
